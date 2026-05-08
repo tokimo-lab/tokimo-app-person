@@ -117,8 +117,8 @@ async fn run_server() -> anyhow::Result<()> {
     let cfg = ClientConfig::from_env().map_err(|e| anyhow::anyhow!("ClientConfig: {e}"))?;
     info!(endpoint = ?cfg.endpoint, "helloworld: connecting to broker");
 
-    let pool = db::init_pool().await?;
-    db::run_migrations(&pool).await?;
+    let db = db::init_pool().await?;
+    db::init_schema(&db).await?;
     info!("helloworld: db ready");
 
     // BusClient 仍然存在 —— 不为暴露方法，而是：
@@ -126,7 +126,7 @@ async fn run_server() -> anyhow::Result<()> {
     // 2) 提供 cross-app `bus.call("notification_center", "notify", ...)` 通道
     let client_slot: Arc<OnceLock<Arc<BusClient>>> = Arc::new(OnceLock::new());
     let ctx = Arc::new(handlers::AppCtx {
-        pool,
+        db,
         client: Arc::clone(&client_slot),
     });
 

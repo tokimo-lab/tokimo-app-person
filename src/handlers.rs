@@ -1,6 +1,6 @@
 //! Axum handlers for helloworld。
 //!
-//! 共用 `AppCtx`：DB pool + 延迟绑定的 BusClient（用于 cross-app 调用）。
+//! 共用 `AppCtx`：DB connection + 延迟绑定的 BusClient（用于 cross-app 调用）。
 
 use std::sync::{Arc, OnceLock};
 
@@ -12,16 +12,18 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Utc};
+use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use tokimo_bus_auth::TokimoUser;
 use tokimo_bus_client::BusClient;
 use tokimo_bus_protocol::CallerCtx;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::db::{entities::items, repos::items_repo::ItemsRepo};
+
 pub struct AppCtx {
-    pub pool: PgPool,
+    pub db: DatabaseConnection,
     pub client: Arc<OnceLock<Arc<BusClient>>>,
 }
 
@@ -59,8 +61,8 @@ impl IntoResponse for AppError {
     }
 }
 
-impl From<sqlx::Error> for AppError {
-    fn from(e: sqlx::Error) -> Self {
+impl From<sea_orm::DbErr> for AppError {
+    fn from(e: sea_orm::DbErr) -> Self {
         Self::internal(format!("db: {e}"))
     }
 }
@@ -101,25 +103,30 @@ pub struct ItemDto {
     pub created_at: DateTime<Utc>,
 }
 
+impl From<items::Model> for ItemDto {
+    fn from(model: items::Model) -> Self {
+        Self {
+            id: model.id,
+            content: model.content,
+            created_at: model.created_at.with_timezone(&Utc),
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct ItemsListResp {
     items: Vec<ItemDto>,
 }
 
-pub async fn items_list(State(ctx): State<Arc<AppCtx>>) -> Result<Json<ItemsListResp>, AppError> {
-    let rows = sqlx::query_as::<_, (Uuid, String, DateTime<Utc>)>(
-        "SELECT id, content, created_at FROM items ORDER BY created_at DESC LIMIT 100",
-    )
-    .fetch_all(&ctx.pool)
-    .await?;
-
-    let items = rows
+pub async fn items_list(
+    State(ctx): State<Arc<AppCtx>>,
+    TokimoUser { user_id }: TokimoUser,
+) -> Result<Json<ItemsListResp>, AppError> {
+    let user_id = parse_user_id(&user_id)?;
+    let items = ItemsRepo::list_by_user(&ctx.db, user_id)
+        .await?
         .into_iter()
-        .map(|(id, content, created_at)| ItemDto {
-            id,
-            content,
-            created_at,
-        })
+        .map(ItemDto::from)
         .collect();
     Ok(Json(ItemsListResp { items }))
 }
@@ -129,21 +136,17 @@ pub struct AddReq {
     content: String,
 }
 
-pub async fn items_add(State(ctx): State<Arc<AppCtx>>, Json(req): Json<AddReq>) -> Result<Json<ItemDto>, AppError> {
+pub async fn items_add(
+    State(ctx): State<Arc<AppCtx>>,
+    TokimoUser { user_id }: TokimoUser,
+    Json(req): Json<AddReq>,
+) -> Result<Json<ItemDto>, AppError> {
     if req.content.trim().is_empty() {
         return Err(AppError::bad_request("content is empty"));
     }
-    let row = sqlx::query_as::<_, (Uuid, String, DateTime<Utc>)>(
-        "INSERT INTO items(content) VALUES ($1) RETURNING id, content, created_at",
-    )
-    .bind(&req.content)
-    .fetch_one(&ctx.pool)
-    .await?;
-    Ok(Json(ItemDto {
-        id: row.0,
-        content: row.1,
-        created_at: row.2,
-    }))
+    let user_id = parse_user_id(&user_id)?;
+    let item = ItemsRepo::create(&ctx.db, user_id, req.content).await?;
+    Ok(Json(ItemDto::from(item)))
 }
 
 #[derive(Serialize)]
@@ -151,14 +154,14 @@ pub struct DeleteResp {
     deleted: u64,
 }
 
-pub async fn items_delete(State(ctx): State<Arc<AppCtx>>, Path(id): Path<Uuid>) -> Result<Json<DeleteResp>, AppError> {
-    let res = sqlx::query("DELETE FROM items WHERE id = $1")
-        .bind(id)
-        .execute(&ctx.pool)
-        .await?;
-    Ok(Json(DeleteResp {
-        deleted: res.rows_affected(),
-    }))
+pub async fn items_delete(
+    State(ctx): State<Arc<AppCtx>>,
+    Path(id): Path<Uuid>,
+    TokimoUser { user_id }: TokimoUser,
+) -> Result<Json<DeleteResp>, AppError> {
+    let user_id = parse_user_id(&user_id)?;
+    let deleted = ItemsRepo::delete(&ctx.db, id, user_id).await?;
+    Ok(Json(DeleteResp { deleted }))
 }
 
 #[derive(Deserialize)]
@@ -169,27 +172,19 @@ pub struct UpdateReq {
 pub async fn items_update(
     State(ctx): State<Arc<AppCtx>>,
     Path(id): Path<Uuid>,
-    TokimoUser { .. }: TokimoUser,
+    TokimoUser { user_id }: TokimoUser,
     Json(req): Json<UpdateReq>,
 ) -> Result<Json<ItemDto>, AppError> {
     if req.content.trim().is_empty() {
         return Err(AppError::bad_request("content is empty"));
     }
 
-    let row = sqlx::query_as::<_, (Uuid, String, DateTime<Utc>)>(
-        "UPDATE items SET content = $1 WHERE id = $2 RETURNING id, content, created_at",
-    )
-    .bind(&req.content)
-    .bind(id)
-    .fetch_optional(&ctx.pool)
-    .await?
-    .ok_or_else(|| AppError::not_found("item not found"))?;
+    let user_id = parse_user_id(&user_id)?;
+    let item = ItemsRepo::update(&ctx.db, id, user_id, req.content)
+        .await?
+        .ok_or_else(|| AppError::not_found("item not found"))?;
 
-    Ok(Json(ItemDto {
-        id: row.0,
-        content: row.1,
-        created_at: row.2,
-    }))
+    Ok(Json(ItemDto::from(item)))
 }
 
 pub async fn items_add_with_notify(
@@ -202,19 +197,11 @@ pub async fn items_add_with_notify(
         return Err(AppError::bad_request("content is empty"));
     }
 
-    let row = sqlx::query_as::<_, (Uuid, String, DateTime<Utc>)>(
-        "INSERT INTO items(content) VALUES ($1) RETURNING id, content, created_at",
-    )
-    .bind(&req.content)
-    .fetch_one(&ctx.pool)
-    .await?;
-    let dto = ItemDto {
-        id: row.0,
-        content: row.1.clone(),
-        created_at: row.2,
-    };
+    let parsed_user_id = parse_user_id(&user_id)?;
+    let item = ItemsRepo::create(&ctx.db, parsed_user_id, req.content).await?;
+    let dto = ItemDto::from(item);
 
-    let user_id = Some(user_id);
+    let caller_user_id = Some(user_id);
 
     let request_id = headers
         .get("x-request-id")
@@ -228,12 +215,12 @@ pub async fn items_add_with_notify(
         .ok_or_else(|| AppError::internal("BusClient not yet bound"))?;
 
     let notify_payload = serde_json::json!({
-        "user_id": user_id,
+        "user_id": caller_user_id,
         "app_id": "helloworld",
         "category_id": "item_added",
         "category_label": "helloworld.notifications.itemAdded",
         "title": "Helloworld",
-        "body": format!("New item added: {}", row.1),
+        "body": format!("New item added: {}", dto.content),
         "level": "info",
     });
     let bytes =
@@ -246,7 +233,7 @@ pub async fn items_add_with_notify(
             "notify",
             bytes,
             CallerCtx {
-                user_id,
+                user_id: caller_user_id,
                 request_id,
                 workspace: None,
             },
@@ -268,4 +255,8 @@ pub async fn data_hello() -> Response {
         "hello from helloworld data-plane\n",
     )
         .into_response()
+}
+
+fn parse_user_id(user_id: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(user_id).map_err(|_| AppError::bad_request("invalid user id"))
 }

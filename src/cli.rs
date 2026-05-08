@@ -1,79 +1,61 @@
 //! CLI entrypoints for helloworld。
 
 use anyhow::Context;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use tokimo_bus_auth::cli::{Client, Credentials, TokimoAuthArgs};
+use chrono::Utc;
+use tokimo_bus_auth::{
+    cli::{Credentials, TokimoAuthArgs},
+    db::{connect_db, verify_token},
+};
 use uuid::Uuid;
 
-use crate::ItemsCmd;
-
-#[derive(Deserialize)]
-struct ItemDto {
-    id: Uuid,
-    content: String,
-    created_at: DateTime<Utc>,
-}
-
-#[derive(Deserialize)]
-struct ItemsListResp {
-    items: Vec<ItemDto>,
-}
-
-#[derive(Serialize)]
-struct ItemContentReq {
-    content: String,
-}
-
-#[derive(Serialize)]
-struct GreetReq {
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct GreetResp {
-    message: String,
-}
+use crate::{
+    ItemsCmd,
+    db::{init_schema, repos::items_repo::ItemsRepo},
+};
 
 pub async fn run_items(auth: TokimoAuthArgs, cmd: ItemsCmd) -> anyhow::Result<()> {
-    let client = client(auth)?;
+    let (db, user_id) = init(auth).await?;
 
     match cmd {
         ItemsCmd::List => {
-            let resp: ItemsListResp = client.get("/items").await.context("list items failed")?;
-            if resp.items.is_empty() {
+            let items = ItemsRepo::list_by_user(&db, user_id)
+                .await
+                .context("list items failed")?;
+            if items.is_empty() {
                 println!("No items.");
                 return Ok(());
             }
 
             println!("{:<36}  {:<25}  Content", "ID", "Created At");
-            for item in resp.items {
+            for item in items {
                 println!(
                     "{:<36}  {:<25}  {}",
                     item.id,
-                    item.created_at.to_rfc3339(),
+                    item.created_at.with_timezone(&Utc).to_rfc3339(),
                     item.content
                 );
             }
         }
         ItemsCmd::Add { content } => {
-            let req = ItemContentReq { content };
-            let item: ItemDto = client.post("/items", &req).await.context("add item failed")?;
+            let item = ItemsRepo::create(&db, user_id, content)
+                .await
+                .context("add item failed")?;
             println!("Added item {}: {}", item.id, item.content);
         }
         ItemsCmd::Update { id, content } => {
-            let req = ItemContentReq { content };
-            let item: ItemDto = client
-                .put(&format!("/items/{id}"), &req)
+            let item = ItemsRepo::update(&db, id, user_id, content)
                 .await
-                .context("update item failed")?;
+                .context("update item failed")?
+                .ok_or_else(|| anyhow::anyhow!("item not found"))?;
             println!("Updated item {}: {}", item.id, item.content);
         }
         ItemsCmd::Delete { id } => {
-            client
-                .delete(&format!("/items/{id}"))
+            let rows = ItemsRepo::delete(&db, id, user_id)
                 .await
                 .context("delete item failed")?;
+            if rows == 0 {
+                anyhow::bail!("item not found");
+            }
             println!("Deleted item {id}");
         }
     }
@@ -82,17 +64,17 @@ pub async fn run_items(auth: TokimoAuthArgs, cmd: ItemsCmd) -> anyhow::Result<()
 }
 
 pub async fn run_greet(auth: TokimoAuthArgs, name: String) -> anyhow::Result<()> {
-    let client = client(auth)?;
-    let resp: GreetResp = client
-        .post("/greet", &GreetReq { name })
-        .await
-        .context("greet failed")?;
-
-    println!("{}", resp.message);
+    let _ = init(auth).await?;
+    println!("Hello, {name}!");
     Ok(())
 }
 
-fn client(auth: TokimoAuthArgs) -> anyhow::Result<Client> {
+async fn init(auth: TokimoAuthArgs) -> anyhow::Result<(sea_orm::DatabaseConnection, Uuid)> {
     let credentials = Credentials::resolve(&auth).context("resolve Tokimo credentials failed")?;
-    Ok(Client::new("helloworld", credentials))
+    let db = connect_db().await.context("connect database failed")?;
+    init_schema(&db).await.context("init schema failed")?;
+    let verified = verify_token(&db, &credentials.token)
+        .await
+        .context("verify Tokimo token failed")?;
+    Ok((db, verified.user_id))
 }
