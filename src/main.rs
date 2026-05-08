@@ -84,8 +84,8 @@ async fn main() -> anyhow::Result<()> {
     let Cli { auth, command } = Cli::parse();
 
     match command {
-        None => {
-            // server 模式：由 supervisor 无参拉起，初始化 tracing
+        None if std::env::var_os("TOKIMO_BUS_SOCKET").is_some() => {
+            // server 模式：由 supervisor 无参拉起（注入了 TOKIMO_BUS_SOCKET），初始化 tracing
             tracing_subscriber::fmt()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::try_from_default_env()
@@ -96,6 +96,13 @@ async fn main() -> anyhow::Result<()> {
                 error!(%error, "helloworld: fatal");
                 std::process::exit(1);
             }
+        }
+        None => {
+            // 人手动无参运行：打印 CLI help 而不是进 server 模式
+            use clap::CommandFactory;
+            Cli::command().print_help().ok();
+            println!();
+            std::process::exit(0);
         }
         Some(cmd) => {
             // CLI 模式：纯文本错误，不输出 tracing 日志
