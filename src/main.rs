@@ -41,8 +41,16 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     /// 管理 helloworld items
-    #[command(subcommand, long_about = "管理 helloworld items", term_width = 100)]
-    Items(ItemsCmd),
+    #[command(
+        subcommand_required = false,
+        arg_required_else_help = false,
+        long_about = "管理 helloworld items",
+        term_width = 100
+    )]
+    Items {
+        #[command(subcommand)]
+        cmd: Option<ItemsCmd>,
+    },
     /// 打印问候语
     Greet { name: String },
 }
@@ -98,7 +106,16 @@ async fn main() -> anyhow::Result<()> {
         Some(cmd) => {
             // CLI 模式：纯文本错误，不输出 tracing 日志
             let result = match cmd {
-                Command::Items(c) => cli::run_items(auth, c).await,
+                Command::Items { cmd: None } => {
+                    use clap::CommandFactory;
+                    let mut root = Cli::command();
+                    root.build();
+                    if let Some(items_cmd) = root.find_subcommand_mut("items") {
+                        tokimo_bus_cli::print_help_unified(items_cmd);
+                    }
+                    std::process::exit(0);
+                }
+                Command::Items { cmd: Some(c) } => cli::run_items(auth, c).await,
                 Command::Greet { name } => cli::run_greet(auth, name).await,
             };
             if let Err(error) = result {
