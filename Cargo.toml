@@ -26,6 +26,7 @@ rust-embed         = { version = "8", features = ["debug-embed"] }
 mime_guess         = "2"
 anyhow             = "1"
 axum = { version = "0.8", features = ["json"] }
+ts-rs = { version = "12", features = ["serde-json-impl"] }
 
 [profile.release]
 lto       = "thin"

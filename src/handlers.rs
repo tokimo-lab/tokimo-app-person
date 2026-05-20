@@ -18,6 +18,7 @@ use tokimo_bus_auth::TokimoUser;
 use tokimo_bus_client::BusClient;
 use tokimo_bus_protocol::CallerCtx;
 use tracing::{info, warn};
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::db::{entities::items, repos::items_repo::ItemsRepo};
@@ -69,12 +70,14 @@ impl From<sea_orm::DbErr> for AppError {
 
 // ─── greet / echo ────────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, TS)]
+#[ts(export)]
 pub struct GreetReq {
     name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct GreetResp {
     message: String,
 }
@@ -96,10 +99,13 @@ pub async fn echo(body: Bytes) -> Response {
 
 // ─── items CRUD ──────────────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct ItemDto {
+    #[ts(type = "string")]
     pub id: Uuid,
     pub content: String,
+    #[ts(type = "string")]
     pub created_at: DateTime<Utc>,
 }
 
@@ -113,7 +119,8 @@ impl From<items::Model> for ItemDto {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct ItemsListResp {
     items: Vec<ItemDto>,
 }
@@ -131,7 +138,8 @@ pub async fn items_list(
     Ok(Json(ItemsListResp { items }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, TS)]
+#[ts(export)]
 pub struct AddReq {
     content: String,
 }
@@ -149,8 +157,10 @@ pub async fn items_add(
     Ok(Json(ItemDto::from(item)))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct DeleteResp {
+    #[ts(type = "number")]
     deleted: u64,
 }
 
@@ -164,7 +174,8 @@ pub async fn items_delete(
     Ok(Json(DeleteResp { deleted }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, TS)]
+#[ts(export)]
 pub struct UpdateReq {
     content: String,
 }

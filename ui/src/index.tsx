@@ -44,13 +44,8 @@ import {
 import { createRoot, type Root } from "react-dom/client";
 import { enUS, zhCN } from "./i18n";
 import "./index.css";
+import type { ItemDto, ItemsListResp } from "./generated/rust-types";
 import { ViewerDemoPanel } from "./viewer-demo";
-
-interface Item {
-  id: string;
-  content: string;
-  created_at: string;
-}
 
 const SERVICE = "helloworld";
 
@@ -325,7 +320,7 @@ function ItemsCrudDemo({
   ctx: AppRuntimeCtx;
   t: (k: string) => string;
 }) {
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<ItemDto[]>([]);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -338,7 +333,7 @@ function ItemsCrudDemo({
         credentials: "include",
       });
       if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-      const res = (await r.json()) as { items: Item[] };
+      const res = (await r.json()) as ItemsListResp;
       setItems(res.items ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
