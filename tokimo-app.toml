@@ -27,3 +27,8 @@ color        = "#10b981"
 width        = 720
 height       = 560
 
+
+[database]
+schema         = "helloworld"
+migrations_dir = "migrations"
+driver         = "postgres"

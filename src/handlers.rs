@@ -245,6 +245,7 @@ pub async fn items_add_with_notify(
             bytes,
             CallerCtx {
                 user_id: caller_user_id,
+                caller_app_id: None,
                 request_id,
                 workspace: None,
             },

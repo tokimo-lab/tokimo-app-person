@@ -133,8 +133,7 @@ async fn run_server() -> anyhow::Result<()> {
     info!(endpoint = ?cfg.endpoint, "helloworld: connecting to broker");
 
     let db = db::init_pool().await?;
-    db::init_schema(&db).await?;
-    info!("helloworld: db ready");
+    info!("helloworld: db connected (schema managed by host)");
 
     // BusClient 仍然存在 —— 不为暴露方法，而是：
     // 1) 让 broker 知道 helloworld 在线（supervisor 健康检查）
