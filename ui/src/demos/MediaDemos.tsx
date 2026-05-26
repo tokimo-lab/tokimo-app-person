@@ -25,14 +25,14 @@ export function MediaCenterSnapshotDemo({ ctx }: { ctx: AppRuntimeCtx }) {
 }
 
 export function MediaSessionDemo({ ctx }: { ctx: AppRuntimeCtx }) {
-  const { snapshot, api } = useMediaCenter(ctx);
-  const mediaApi = api ?? ctx.shell.media;
+  const { snapshot } = useMediaCenter(ctx);
+  const mediaApi = ctx.shell.media;
 
   if (snapshot == null) {
     return (
       <Section
         desc="Compact controls for the active media session."
-        code="const { snapshot, api } = useMediaCenter(ctx);"
+        code="const { snapshot } = useMediaCenter(ctx);"
       >
         <Empty description="No active media source — start playback in another app first." />
       </Section>
@@ -44,7 +44,7 @@ export function MediaSessionDemo({ ctx }: { ctx: AppRuntimeCtx }) {
   return (
     <Section
       desc="Compact active source plus pause/resume and next/previous controls."
-      code="const { snapshot, api } = useMediaCenter(ctx);"
+      code="const { snapshot } = useMediaCenter(ctx);"
     >
       <Card className="flex items-center gap-3 p-3">
         {currentTrack?.artworkUrl ? (
