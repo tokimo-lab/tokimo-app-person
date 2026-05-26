@@ -15,9 +15,8 @@ import {
   makeTranslator,
 } from "@tokimo/sdk";
 import {
+  useMediaCenter,
   useShellAppearance,
-  useShellMedia,
-  useShellMediaSessionSnapshot,
   useShellMenuBar,
   useShellToast,
   useShellWindowNav,
@@ -174,52 +173,31 @@ function ToastDemo({ ctx }: { ctx: AppRuntimeCtx }) {
 }
 
 function MediaDemo({ ctx }: { ctx: AppRuntimeCtx }) {
-  const media = useShellMedia(ctx);
+  const { snapshot } = useMediaCenter(ctx);
   useEffect(() => {
-    console.log("[helloworld] media.snapshot →", media.snapshot);
-  }, [media.snapshot]);
+    console.log("[helloworld] media.snapshot →", snapshot);
+  }, [snapshot]);
   return (
     <Section
-      desc="Central audio engine snapshot. Reactive — re-renders when any other app plays / pauses."
-      code="const media = useShellMedia(ctx); media.snapshot.isPlaying;"
+      desc="Central media center snapshot. Reactive — re-renders whenever the active provider's playback state changes. `null` = no provider playing."
+      code="const { snapshot } = useMediaCenter(ctx); snapshot?.isPlaying;"
     >
       <Snapshot>
-        {fmt({
-          isPlaying: media.snapshot.isPlaying,
-          currentTime: media.snapshot.currentTime,
-          duration: media.snapshot.duration,
-          volume: media.snapshot.volume,
-          activeProvider: media.snapshot.activeProvider,
-        })}
-      </Snapshot>
-    </Section>
-  );
-}
-
-function MediaSessionDemo({ ctx }: { ctx: AppRuntimeCtx }) {
-  const session = useShellMediaSessionSnapshot(ctx);
-  useEffect(() => {
-    console.log("[helloworld] mediaSession →", session);
-  }, [session]);
-  return (
-    <Section
-      desc="Cross-app 'now playing' source. Reads who's currently the active media session across the desktop. Useful for global media controls."
-      code="const s = useShellMediaSessionSnapshot(ctx); s.activeSource"
-    >
-      <Snapshot>
-        {fmt({
-          activeSource: session.activeSource
+        {fmt(
+          snapshot
             ? {
-                id: session.activeSource.id,
-                type: session.activeSource.type,
-                provider: session.activeSource.provider,
-                title: session.activeSource.title,
-                artist: session.activeSource.artist,
-                isPlaying: session.activeSource.isPlaying,
+                providerId: snapshot.providerId,
+                isPlaying: snapshot.isPlaying,
+                currentTimeMs: snapshot.currentTimeMs,
+                durationMs: snapshot.durationMs,
+                volume: snapshot.volume,
+                shuffle: snapshot.shuffle,
+                repeatMode: snapshot.repeatMode,
+                currentIndex: snapshot.currentIndex,
+                queueLen: snapshot.queue.length,
               }
             : null,
-          rawPlaybackDataReady: session.rawPlaybackDataReady,
-        })}
+        )}
       </Snapshot>
     </Section>
   );
@@ -488,16 +466,9 @@ const DEMOS: DemoEntry[] = [
   {
     id: "media",
     category: "Media",
-    title: "useShellMedia",
-    api: "useShellMedia(ctx)",
+    title: "useMediaCenter",
+    api: "useMediaCenter(ctx)",
     Component: MediaDemo,
-  },
-  {
-    id: "media-session",
-    category: "Media",
-    title: "useShellMediaSessionSnapshot",
-    api: "useShellMediaSessionSnapshot(ctx)",
-    Component: MediaSessionDemo,
   },
   {
     id: "notify",
