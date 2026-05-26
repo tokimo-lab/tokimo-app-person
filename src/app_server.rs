@@ -48,6 +48,7 @@ fn build_router(ctx: Arc<AppCtx>) -> Router {
             put(handlers::items_update).delete(handlers::items_delete),
         )
         .route("/items/notify", post(handlers::items_add_with_notify))
+        .route("/jobs/start", post(handlers::start_job))
         .route("/greet", post(handlers::greet))
         .route("/echo", any(handlers::echo))
         .route("/assets/{*path}", get(assets::serve))
