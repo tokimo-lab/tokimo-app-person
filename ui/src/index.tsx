@@ -32,6 +32,7 @@ import {
   WindowNavDemo,
 } from "./demos/BasicDemos";
 import { ItemsCrudDemo } from "./demos/ItemsCrudDemo";
+import { BulkImportJobDemo, LongRunningJobDemo } from "./demos/JobsDemos";
 import { MediaCenterSnapshotDemo, MediaSessionDemo } from "./demos/MediaDemos";
 import type { DemoEntry } from "./demos/shared";
 import { enUS, zhCN } from "./i18n";
@@ -101,6 +102,20 @@ const DEMOS: DemoEntry[] = [
     title: "Items CRUD",
     api: "/api/apps/helloworld/items",
     Component: ItemsCrudDemo,
+  },
+  {
+    id: "bulk-import-job",
+    category: "Jobs",
+    title: "Bulk import job",
+    api: "POST /api/apps/helloworld/jobs/start",
+    Component: BulkImportJobDemo,
+  },
+  {
+    id: "long-running-job",
+    category: "Jobs",
+    title: "Long running job",
+    api: "POST /api/apps/helloworld/jobs/start",
+    Component: LongRunningJobDemo,
   },
   {
     id: "viewer-demo",
