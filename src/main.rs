@@ -23,10 +23,60 @@ mod handlers;
 
 use std::sync::{Arc, OnceLock};
 
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use clap::{Parser, Subcommand};
 use tokimo_bus_cli::TokimoAuthArgs;
 use tokimo_bus_client::{BusClient, ClientConfig};
 use tracing::{error, info};
+
+/// 统一错误响应（与 lib.rs 共享同一定义，binary crate 内模块通过 `crate::AppError` 引用）。
+#[derive(Debug)]
+pub struct AppError {
+    pub status: StatusCode,
+    pub message: String,
+}
+
+impl AppError {
+    pub fn bad_request(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: msg.into(),
+        }
+    }
+    pub fn internal(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: msg.into(),
+        }
+    }
+    pub fn not_found(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            message: msg.into(),
+        }
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> axum::response::Response {
+        let body = serde_json::json!({ "error": self.message });
+        (self.status, Json(body)).into_response()
+    }
+}
+
+impl From<sea_orm::DbErr> for AppError {
+    fn from(e: sea_orm::DbErr) -> Self {
+        Self::internal(format!("db: {e}"))
+    }
+}
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for AppError {}
 
 #[derive(Parser, Debug)]
 #[command(
