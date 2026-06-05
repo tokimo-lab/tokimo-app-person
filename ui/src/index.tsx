@@ -155,10 +155,10 @@ function HelloworldWindow({ ctx }: { ctx: AppRuntimeCtx }) {
   const Demo = current.Component;
 
   return (
-    <div className="flex h-full w-full text-[var(--text-primary)]">
+    <div className="flex h-full w-full text-[var(--color-fg-primary)]">
       <aside className="flex w-[240px] flex-col border-r border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03]">
         <div className="flex items-center gap-2 border-b border-black/10 dark:border-white/10 px-3 py-3">
-          <Sparkles size={18} style={{ color: "var(--accent)" }} />
+          <Sparkles size={18} style={{ color: "var(--color-accent)" }} />
           <div className="flex flex-col">
             <span className="text-sm font-semibold">{t("title")}</span>
             <span className="text-[10px] opacity-60">{t("subtitle")}</span>
@@ -197,7 +197,7 @@ function HelloworldWindow({ ctx }: { ctx: AppRuntimeCtx }) {
                     onClick={() => setSelectedId(d.id)}
                     className={`w-full cursor-pointer rounded px-2 py-1.5 text-left text-xs transition ${
                       active
-                        ? "bg-[var(--accent-subtle)] text-[var(--accent)]"
+                        ? "bg-[var(--color-accent-subtle)] text-[var(--color-accent)]"
                         : "hover:bg-black/[0.05] dark:hover:bg-white/[0.05]"
                     }`}
                   >
@@ -211,7 +211,7 @@ function HelloworldWindow({ ctx }: { ctx: AppRuntimeCtx }) {
       </aside>
 
       <main className="flex-1 overflow-auto">
-        <header className="sticky top-0 z-10 border-b border-black/10 dark:border-white/10 bg-[var(--surface,white)]/80 dark:bg-black/40 backdrop-blur px-6 py-4">
+        <header className="sticky top-0 z-10 border-b border-black/10 dark:border-white/10 bg-surface-base/80 dark:bg-black/40 backdrop-blur px-6 py-4">
           <div className="text-[10px] uppercase tracking-wide opacity-50">
             {current.category}
           </div>

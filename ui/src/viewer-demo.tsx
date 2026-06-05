@@ -100,7 +100,7 @@ export function ViewerDemoPanel() {
               onClick={() => setActiveId(tab.id)}
               className={`cursor-pointer rounded-xl border px-3 py-2 text-left transition ${
                 active
-                  ? "border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)]"
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent-subtle)] text-[var(--color-accent)]"
                   : "border-black/10 bg-black/[0.03] hover:bg-black/[0.06] dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
               }`}
             >
