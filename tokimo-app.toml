@@ -1,34 +1,25 @@
 # Tokimo app manifest（供主 server 读取，注册 / spawn / 资源代理 / launchpad 展示）
 [app]
-id          = "helloworld"
-display     = "Hello World"
+id          = "person"
+display     = "Person"
 version     = "0.1.0"
-description = "Tokimo 多进程架构试点 app"
+description = "中心化人物身份服务 — 跨 app 人脸匹配与人物管理"
 
 [runtime]
-lifecycle    = "resident"            # resident | on_demand | one_shot
-binary       = "tokimo-app-helloworld"  # 不含 .exe 后缀；server 自动按平台拼接
-ui_dist      = "ui/dist"             # 相对 install 目录；用作 TOKIMO_APP_ASSETS_DIR
+lifecycle    = "resident"
+binary       = "tokimo-app-person"
+ui_dist      = "ui/dist"
 
 [ui]
-# 浏览器侧 dynamic import 的相对 URL（相对 assets/，以 "/api/apps/<id>/assets/" 为根）
 entry        = "assets/index.js"
-# 窗口类型路由键（shell WINDOW_REGISTRY key）；通常 = app id
-window_type  = "helloworld"
-# launchpad 类别：app（自治窗口） / page（DB 驱动页面） / system / popup
+window_type  = "person"
 category     = "app"
-# 可选 Lucide 图标名；image 优先级更高
-icon         = "Sparkles"
-# 可选图片图标：相对路径会被 shell 重写为 /api/apps/<id>/assets/<path>
-image        = "icon.png"
-# 品牌色
-color        = "#10b981"
-# 默认窗口尺寸
-width        = 720
-height       = 560
-
+icon         = "Users"
+color        = "#8b5cf6"
+width        = 900
+height       = 700
 
 [database]
-schema         = "helloworld"
+schema         = "person"
 migrations_dir = "migrations"
 driver         = "postgres"
