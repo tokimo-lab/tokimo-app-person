@@ -29,6 +29,7 @@ pub struct PersonDto {
     pub name: Option<String>,
     pub avatar_url: Option<String>,
     pub face_count: i32,
+    pub media_count: i32,
     #[ts(type = "string")]
     pub created_at: DateTime<Utc>,
     #[ts(type = "string")]
@@ -42,6 +43,7 @@ impl From<crate::db::entities::persons::Model> for PersonDto {
             name: m.name,
             avatar_url: m.avatar_url,
             face_count: m.face_count,
+            media_count: 0, // TODO: query actual media count
             created_at: m.created_at.with_timezone(&Utc),
             updated_at: m.updated_at.with_timezone(&Utc),
         }
@@ -51,7 +53,8 @@ impl From<crate::db::entities::persons::Model> for PersonDto {
 #[derive(Serialize, TS)]
 #[ts(export)]
 pub struct PersonListResponse {
-    persons: Vec<PersonDto>,
+    items: Vec<PersonDto>,
+    total: u64,
 }
 
 pub async fn list_persons(
@@ -59,12 +62,10 @@ pub async fn list_persons(
     TokimoUser { user_id }: TokimoUser,
 ) -> Result<Json<PersonListResponse>, AppError> {
     let uid = parse_user_id(&user_id)?;
-    let persons = PersonRepo::list(&ctx.db, uid)
-        .await?
-        .into_iter()
-        .map(PersonDto::from)
-        .collect();
-    Ok(Json(PersonListResponse { persons }))
+    let persons = PersonRepo::list(&ctx.db, uid).await?;
+    let total = persons.len() as u64;
+    let items = persons.into_iter().map(PersonDto::from).collect();
+    Ok(Json(PersonListResponse { items, total }))
 }
 
 pub async fn get_person(
