@@ -41,6 +41,16 @@ export interface MediaDto {
   created_at: string;
 }
 
+export interface MatchFaceResp {
+  person_id: string | null;
+  is_new: boolean;
+  similarity: number;
+}
+
+export interface RegisterFacesResp {
+  cached: number;
+}
+
 const BASE = "/api/apps/person";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -68,5 +78,31 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
+    }),
+
+  matchFace: (params: { image_hash: string; face_index: number }) =>
+    request<MatchFaceResp>("/match-face", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    }),
+
+  registerFaces: (params: {
+    image_hash: string;
+    source_app: string;
+    source_id: string;
+    faces: Array<{ index: number; bbox: [number, number, number, number] }>;
+  }) =>
+    request<RegisterFacesResp>("/register-faces", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    }),
+
+  deleteSource: (params: { source_app: string; source_id: string }) =>
+    request<{ deleted: number }>("/delete-source", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
     }),
 };

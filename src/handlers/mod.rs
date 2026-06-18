@@ -11,7 +11,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::{
-    db::repos::person_repo::PersonRepo,
+    db::repos::{face_cache_repo::FaceCacheRepo, person_repo::PersonRepo},
     error::AppError,
 };
 
@@ -97,4 +97,139 @@ pub async fn update_person(
         .await?
         .ok_or_else(|| AppError::NotFound("person not found".into()))?;
     Ok(Json(PersonDto::from(person)))
+}
+
+// ── Bus API proxy handlers (for demo page testing) ──────────────────────────
+
+#[derive(Deserialize)]
+pub struct RegisterFacesReq {
+    pub image_hash: String,
+    pub source_app: String,
+    pub source_id: String,
+    pub faces: Vec<RegisterFaceItem>,
+}
+
+#[derive(Deserialize)]
+pub struct RegisterFaceItem {
+    pub index: i32,
+    pub bbox: serde_json::Value,
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct RegisterFacesResponse {
+    pub cached: usize,
+}
+
+pub async fn register_faces(
+    State(ctx): State<Arc<AppCtx>>,
+    Json(req): Json<RegisterFacesReq>,
+) -> Result<Json<RegisterFacesResponse>, AppError> {
+    let faces: Vec<(i32, Vec<f64>, serde_json::Value)> = req
+        .faces
+        .into_iter()
+        .map(|f| (f.index, vec![], f.bbox))
+        .collect();
+
+    let result =
+        FaceCacheRepo::upsert_faces(&ctx.db, &req.image_hash, &req.source_app, &req.source_id, faces)
+            .await?;
+
+    Ok(Json(RegisterFacesResponse {
+        cached: result.len(),
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct MatchFaceReq {
+    pub image_hash: String,
+    pub face_index: i32,
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct MatchFaceResponse {
+    #[ts(type = "string")]
+    pub person_id: Uuid,
+    pub is_new: bool,
+    pub similarity: f64,
+}
+
+pub async fn match_face(
+    State(ctx): State<Arc<AppCtx>>,
+    TokimoUser { user_id }: TokimoUser,
+    Json(req): Json<MatchFaceReq>,
+) -> Result<Json<MatchFaceResponse>, AppError> {
+    let uid = parse_user_id(&user_id)?;
+
+    // Get face from cache
+    let cached_faces = FaceCacheRepo::get_by_image_hash(&ctx.db, &req.image_hash).await?;
+    let face = cached_faces
+        .into_iter()
+        .find(|f| f.face_index == req.face_index)
+        .ok_or_else(|| AppError::NotFound("face not found in cache".into()))?;
+
+    // Check if already linked
+    if let Some(link) = PersonRepo::get_face_link(&ctx.db, uid, face.id).await? {
+        return Ok(Json(MatchFaceResponse {
+            person_id: link.person_id,
+            is_new: false,
+            similarity: 1.0,
+        }));
+    }
+
+    // Create new person and link
+    let person = PersonRepo::create(&ctx.db, uid, None).await?;
+    PersonRepo::link_face(&ctx.db, uid, person.id, face.id).await?;
+    PersonRepo::link_media(&ctx.db, uid, person.id, &face.source_app, &face.source_id).await?;
+
+    Ok(Json(MatchFaceResponse {
+        person_id: person.id,
+        is_new: true,
+        similarity: 0.0,
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct DeleteSourceReq {
+    pub source_app: String,
+    pub source_id: String,
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct DeleteSourceResponse {
+    pub deleted_cache: u64,
+    pub affected_persons: u64,
+}
+
+pub async fn delete_source(
+    State(ctx): State<Arc<AppCtx>>,
+    Json(req): Json<DeleteSourceReq>,
+) -> Result<Json<DeleteSourceResponse>, AppError> {
+    // Delete media associations
+    let deleted_media =
+        PersonRepo::delete_media_by_source(&ctx.db, &req.source_app, &req.source_id).await?;
+
+    // Delete face cache (CASCADE will clean person_faces)
+    let deleted_cache =
+        FaceCacheRepo::delete_by_source(&ctx.db, &req.source_app, &req.source_id).await?;
+
+    // Clean up empty persons
+    let user_ids: Vec<Uuid> = deleted_media
+        .iter()
+        .map(|m| m.user_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let mut affected_persons = 0;
+    for uid in user_ids {
+        affected_persons += PersonRepo::delete_empty_persons(&ctx.db, uid).await?;
+    }
+
+    Ok(Json(DeleteSourceResponse {
+        deleted_cache,
+        affected_persons,
+    }))
 }

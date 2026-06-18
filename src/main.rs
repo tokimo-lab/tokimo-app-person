@@ -22,6 +22,7 @@ mod cli;
 mod db;
 mod error;
 mod handlers;
+mod queue;
 mod state;
 
 use std::sync::{Arc, OnceLock};
@@ -143,6 +144,13 @@ async fn run_server() -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("client_slot already set"))?;
 
     info!("person: registered with broker");
+
+    // Register job handlers for async processing with retry
+    bus_clients::jobs::register_handler(&client, "person_delete_source", "dispatch_person_delete_source")
+        .await?;
+    bus_clients::jobs::register_handler(&client, "person_register_faces", "dispatch_person_register_faces")
+        .await?;
+    info!("person: job handlers registered");
 
     let shutdown = {
         let client = Arc::clone(&client);

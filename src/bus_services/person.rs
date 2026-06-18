@@ -143,4 +143,61 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                 .map_err(|e| BusError::Internal(e.to_string()))
             }
         })
+        // Job dispatch methods (called by job worker for async processing with retry)
+        .method(decl(
+            "dispatch_person_delete_source",
+            "Job handler: delete cached faces by source",
+        ))
+        .on_invoke("dispatch_person_delete_source", move |req| {
+            let ctx = ctx.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct JobReq {
+                    job: JobPayload,
+                }
+                #[derive(serde::Deserialize)]
+                struct JobPayload {
+                    id: String,
+                    params: serde_json::Value,
+                }
+                let body: JobReq = decode_json(&req.payload)?;
+                let job_id = Uuid::parse_str(&body.job.id)
+                    .map_err(|e| BusError::BadRequest(format!("job id: {e}")))?;
+
+                let result = crate::queue::person_delete_source::handle(&ctx, job_id, &body.job.params)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?;
+
+                serde_json::to_vec(&result.unwrap_or_default())
+                    .map_err(|e| BusError::Internal(e.to_string()))
+            }
+        })
+        .method(decl(
+            "dispatch_person_register_faces",
+            "Job handler: register faces into shared cache",
+        ))
+        .on_invoke("dispatch_person_register_faces", move |req| {
+            let ctx = ctx.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct JobReq {
+                    job: JobPayload,
+                }
+                #[derive(serde::Deserialize)]
+                struct JobPayload {
+                    id: String,
+                    params: serde_json::Value,
+                }
+                let body: JobReq = decode_json(&req.payload)?;
+                let job_id = Uuid::parse_str(&body.job.id)
+                    .map_err(|e| BusError::BadRequest(format!("job id: {e}")))?;
+
+                let result = crate::queue::person_register_faces::handle(&ctx, job_id, &body.job.params)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?;
+
+                serde_json::to_vec(&result.unwrap_or_default())
+                    .map_err(|e| BusError::Internal(e.to_string()))
+            }
+        })
 }

@@ -109,6 +109,24 @@ pub async fn update_progress(
 }
 
 #[allow(dead_code)]
+pub async fn register_handler(client: &BusClient, job_type: &str, method: &str) -> Result<(), AppError> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Req<'a> {
+        job_type: &'a str,
+        method: &'a str,
+    }
+    let _ = invoke_json(
+        client,
+        "register_handler",
+        CallerCtx::default(),
+        &Req { job_type, method },
+    )
+    .await?;
+    Ok(())
+}
+
+#[allow(dead_code)]
 async fn invoke_json<T: Serialize>(
     client: &BusClient,
     method: &str,
