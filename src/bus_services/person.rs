@@ -36,6 +36,8 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
     let ctx_register = ctx.clone();
     let ctx_match = ctx.clone();
     let ctx_delete = ctx.clone();
+    let ctx_dispatch_delete = ctx.clone();
+    let ctx_dispatch_register = ctx.clone();
 
     builder
         .method(decl(
@@ -149,7 +151,7 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
             "Job handler: delete cached faces by source",
         ))
         .on_invoke("dispatch_person_delete_source", move |req| {
-            let ctx = ctx.clone();
+            let ctx = ctx_dispatch_delete.clone();
             async move {
                 #[derive(serde::Deserialize)]
                 struct JobReq {
@@ -177,7 +179,7 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
             "Job handler: register faces into shared cache",
         ))
         .on_invoke("dispatch_person_register_faces", move |req| {
-            let ctx = ctx.clone();
+            let ctx = ctx_dispatch_register.clone();
             async move {
                 #[derive(serde::Deserialize)]
                 struct JobReq {

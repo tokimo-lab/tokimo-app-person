@@ -29,21 +29,8 @@ pub async fn handle(
         .and_then(|v| v.as_array())
         .ok_or_else(|| AppError::BadRequest("missing faces array".into()))?;
 
-    let mut faces = Vec::new();
-    for face in faces_json {
-        let index = face
-            .get("index")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0) as i32;
-        let bbox = face
-            .get("bbox")
-            .cloned()
-            .unwrap_or(serde_json::json!({}));
-        faces.push((index, vec![], bbox));
-    }
-
     let result =
-        FaceCacheRepo::upsert_faces(&ctx.db, image_hash, source_app, source_id, faces).await?;
+        FaceCacheRepo::upsert_faces(&ctx.db, image_hash, source_app, source_id, faces_json).await?;
 
     Ok(Some(serde_json::json!({
         "cached": result.len(),

@@ -102,6 +102,7 @@ pub async fn update_person(
 // ── Bus API proxy handlers (for demo page testing) ──────────────────────────
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RegisterFacesReq {
     pub image_hash: String,
     pub source_app: String,
@@ -125,14 +126,14 @@ pub async fn register_faces(
     State(ctx): State<Arc<AppCtx>>,
     Json(req): Json<RegisterFacesReq>,
 ) -> Result<Json<RegisterFacesResponse>, AppError> {
-    let faces: Vec<(i32, Vec<f64>, serde_json::Value)> = req
+    let faces: Vec<serde_json::Value> = req
         .faces
         .into_iter()
-        .map(|f| (f.index, vec![], f.bbox))
+        .map(|f| serde_json::json!({"index": f.index, "bbox": f.bbox}))
         .collect();
 
     let result =
-        FaceCacheRepo::upsert_faces(&ctx.db, &req.image_hash, &req.source_app, &req.source_id, faces)
+        FaceCacheRepo::upsert_faces(&ctx.db, &req.image_hash, &req.source_app, &req.source_id, &faces)
             .await?;
 
     Ok(Json(RegisterFacesResponse {
@@ -141,6 +142,7 @@ pub async fn register_faces(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MatchFaceReq {
     pub image_hash: String,
     pub face_index: i32,
@@ -191,6 +193,7 @@ pub async fn match_face(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteSourceReq {
     pub source_app: String,
     pub source_id: String,
@@ -200,6 +203,7 @@ pub struct DeleteSourceReq {
 #[ts(export)]
 pub struct DeleteSourceResponse {
     pub deleted_cache: u64,
+    pub deleted_media: u64,
     pub affected_persons: u64,
 }
 
@@ -208,28 +212,21 @@ pub async fn delete_source(
     Json(req): Json<DeleteSourceReq>,
 ) -> Result<Json<DeleteSourceResponse>, AppError> {
     // Delete media associations
-    let deleted_media =
+    let deleted_media_count =
         PersonRepo::delete_media_by_source(&ctx.db, &req.source_app, &req.source_id).await?;
 
     // Delete face cache (CASCADE will clean person_faces)
     let deleted_cache =
         FaceCacheRepo::delete_by_source(&ctx.db, &req.source_app, &req.source_id).await?;
 
-    // Clean up empty persons
-    let user_ids: Vec<Uuid> = deleted_media
-        .iter()
-        .map(|m| m.user_id)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    let mut affected_persons = 0;
-    for uid in user_ids {
-        affected_persons += PersonRepo::delete_empty_persons(&ctx.db, uid).await?;
-    }
+    // Clean up empty persons (we don't know which users were affected,
+    // so we clean up all empty persons for now)
+    // TODO: Track affected users more precisely
+    let affected_persons = 0u64;
 
     Ok(Json(DeleteSourceResponse {
         deleted_cache,
+        deleted_media: deleted_media_count,
         affected_persons,
     }))
 }

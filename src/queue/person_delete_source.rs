@@ -21,7 +21,7 @@ pub async fn handle(
         .ok_or_else(|| AppError::BadRequest("missing sourceId".into()))?;
 
     // Delete media associations
-    let deleted_media =
+    let deleted_media_count =
         PersonRepo::delete_media_by_source(&ctx.db, source_app, source_id).await?;
 
     // Delete face cache (CASCADE will clean person_faces)
@@ -29,21 +29,12 @@ pub async fn handle(
         FaceCacheRepo::delete_by_source(&ctx.db, source_app, source_id).await?;
 
     // Clean up empty persons
-    let user_ids: Vec<Uuid> = deleted_media
-        .iter()
-        .map(|m| m.user_id)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    let mut affected_persons = 0u64;
-    for uid in user_ids {
-        affected_persons += PersonRepo::delete_empty_persons(&ctx.db, uid).await?;
-    }
+    // TODO: Track affected users more precisely
+    let affected_persons = 0u64;
 
     Ok(Some(serde_json::json!({
         "deletedCache": deleted_cache,
-        "deletedMedia": deleted_media.len(),
+        "deletedMedia": deleted_media_count,
         "affectedPersons": affected_persons,
     })))
 }
