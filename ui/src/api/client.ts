@@ -121,7 +121,7 @@ export async function fetchPersonPhotos(
 ): Promise<PhotoOutput[]> {
   try {
     // First, get all photo libraries
-    const libsRes = await fetch(`${PHOTO_BASE}/`);
+    const libsRes = await fetch(PHOTO_BASE);
     if (!libsRes.ok) return [];
     const libs = await libsRes.json();
     const libraries: Array<{ id: string }> = libs.data ?? [];
