@@ -12,33 +12,38 @@ export interface PersonsListResp {
   total: number;
 }
 
+export interface FaceDetailDto {
+  id: string;
+  image_hash: string;
+  face_index: number;
+  bbox: unknown;
+  source_app: string;
+  source_id: string;
+}
+
 export interface PersonDetailDto {
   id: string;
   name: string;
   face_count: number;
   media_count: number;
-  faces: FaceDto[];
-  media: MediaDto[];
+  faces: FaceDetailDto[];
   created_at: string;
   updated_at: string;
 }
 
-export interface FaceDto {
+export interface PhotoOutput {
   id: string;
-  media_id: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  confidence: number;
-  thumbnail_path: string | null;
+  filename: string;
+  path: string;
+  width: number | null;
+  height: number | null;
+  takenAt: string | null;
+  thumbnailPath: string | null;
 }
 
-export interface MediaDto {
-  id: string;
-  path: string;
-  thumbnail_path: string | null;
-  created_at: string;
+export interface PhotosResponse {
+  items: PhotoOutput[];
+  total: number;
 }
 
 export interface MatchFaceResp {
@@ -71,7 +76,7 @@ export const api = {
     return request<PersonsListResp>(`/persons${query ? `?${query}` : ""}`);
   },
 
-  getPerson: (id: string) => request<PersonDetailDto>(`/persons/${id}`),
+  getPerson: (id: string) => request<PersonDetailDto>(`/persons/${id}/detail`),
 
   updatePerson: (id: string, data: { name?: string }) =>
     request<PersonDetailDto>(`/persons/${id}`, {
@@ -106,3 +111,39 @@ export const api = {
       body: JSON.stringify(params),
     }),
 };
+
+// ── Photo app API (cross-app) ────────────────────────────────────────────────
+
+const PHOTO_BASE = "/api/apps/photo";
+
+export async function fetchPersonPhotos(
+  personId: string,
+): Promise<PhotoOutput[]> {
+  try {
+    // First, get all photo libraries
+    const libsRes = await fetch(`${PHOTO_BASE}/`);
+    if (!libsRes.ok) return [];
+    const libs = await libsRes.json();
+    const libraries: Array<{ id: string }> = libs.data ?? [];
+
+    // For each library, get photos for this person
+    const allPhotos: PhotoOutput[] = [];
+    for (const lib of libraries) {
+      try {
+        const res = await fetch(
+          `${PHOTO_BASE}/${lib.id}/persons/${personId}/photos?page=1&pageSize=100`,
+        );
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data.data?.items) {
+          allPhotos.push(...data.data.items);
+        }
+      } catch {
+        // Library might not have this person, skip
+      }
+    }
+    return allPhotos;
+  } catch {
+    return [];
+  }
+}

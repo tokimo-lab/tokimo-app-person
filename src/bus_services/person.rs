@@ -94,6 +94,22 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                     .await
                     .map_err(|e| BusError::Internal(e.to_string()))?;
 
+                let person_id = if let Some(l) = link {
+                    Some(l.person_id)
+                } else {
+                    // Auto-create a new person and link the face
+                    let person = PersonRepo::create(&ctx.db, user_id, None)
+                        .await
+                        .map_err(|e| BusError::Internal(e.to_string()))?;
+                    PersonRepo::link_face(&ctx.db, user_id, person.id, face.id)
+                        .await
+                        .map_err(|e| BusError::Internal(e.to_string()))?;
+                    PersonRepo::increment_face_count(&ctx.db, person.id)
+                        .await
+                        .map_err(|e| BusError::Internal(e.to_string()))?;
+                    Some(person.id)
+                };
+
                 #[derive(serde::Serialize)]
                 struct Resp {
                     face_cache_id: Uuid,
@@ -102,7 +118,7 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                 }
                 let resp = Resp {
                     face_cache_id: face.id,
-                    person_id: link.map(|l| l.person_id),
+                    person_id,
                     bbox: face.bbox,
                 };
                 serde_json::to_vec(&resp).map_err(|e| BusError::Internal(e.to_string()))

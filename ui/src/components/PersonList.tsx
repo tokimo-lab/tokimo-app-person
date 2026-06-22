@@ -86,11 +86,11 @@ export function PersonList({ t, onSelect }: Props) {
                   <Users size={16} className="text-[var(--color-accent)]" />
                 </div>
                 <div className="flex flex-1 flex-col">
-                  <span className="text-sm font-medium">{person.name}</span>
+                  <span className="text-sm font-medium">
+                    {person.name || t("unnamed")}
+                  </span>
                   <span className="text-[11px] opacity-60">
-                    {t("faceCount")}: {person.face_count}
-                    {" · "}
-                    {t("mediaCount")}: {person.media_count}
+                    {person.face_count} {t("faceCount")}
                   </span>
                 </div>
               </div>

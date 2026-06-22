@@ -32,6 +32,7 @@ fn build_router(ctx: Arc<AppState>) -> Router {
             "/persons/{id}",
             get(handlers::get_person).put(handlers::update_person),
         )
+        .route("/persons/{id}/detail", get(handlers::get_person_detail))
         .route("/register-faces", axum::routing::post(handlers::register_faces))
         .route("/match-face", axum::routing::post(handlers::match_face))
         .route("/delete-source", axum::routing::post(handlers::delete_source))

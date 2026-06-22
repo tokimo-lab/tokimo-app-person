@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     db::repos::{face_cache_repo::FaceCacheRepo, person_repo::PersonRepo},
+    db::entities::image_face_cache,
     error::AppError,
 };
 
@@ -78,6 +79,71 @@ pub async fn get_person(
         .await?
         .ok_or_else(|| AppError::NotFound("person not found".into()))?;
     Ok(Json(PersonDto::from(person)))
+}
+
+// ── Person detail with faces ─────────────────────────────────────────────────
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct FaceDetailDto {
+    #[ts(type = "string")]
+    pub id: String,
+    pub image_hash: String,
+    pub face_index: i32,
+    pub bbox: serde_json::Value,
+    pub source_app: String,
+    pub source_id: String,
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct PersonDetailDto {
+    #[ts(type = "string")]
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub face_count: i32,
+    pub media_count: i32,
+    pub faces: Vec<FaceDetailDto>,
+    #[ts(type = "string")]
+    pub created_at: DateTime<Utc>,
+    #[ts(type = "string")]
+    pub updated_at: DateTime<Utc>,
+}
+
+pub async fn get_person_detail(
+    State(ctx): State<Arc<AppCtx>>,
+    Path(id): Path<Uuid>,
+    TokimoUser { user_id }: TokimoUser,
+) -> Result<Json<PersonDetailDto>, AppError> {
+    let uid = parse_user_id(&user_id)?;
+    let person = PersonRepo::get_by_id(&ctx.db, id, uid)
+        .await?
+        .ok_or_else(|| AppError::NotFound("person not found".into()))?;
+
+    let face_links = PersonRepo::get_person_faces(&ctx.db, id).await?;
+    let faces: Vec<FaceDetailDto> = face_links
+        .into_iter()
+        .map(|(pf, cache)| FaceDetailDto {
+            id: pf.id.to_string(),
+            image_hash: cache.image_hash.clone(),
+            face_index: cache.face_index,
+            bbox: cache.bbox.clone(),
+            source_app: cache.source_app.clone(),
+            source_id: cache.source_id.clone(),
+        })
+        .collect();
+
+    Ok(Json(PersonDetailDto {
+        id: person.id,
+        name: person.name,
+        avatar_url: person.avatar_url,
+        face_count: person.face_count,
+        media_count: 0,
+        faces,
+        created_at: person.created_at.with_timezone(&Utc),
+        updated_at: person.updated_at.with_timezone(&Utc),
+    }))
 }
 
 #[derive(Deserialize, TS)]

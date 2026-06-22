@@ -1,7 +1,13 @@
 import { Button, Card, Input } from "@tokimo/ui";
 import { ArrowLeft, Image, Pencil, Save, Users, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, type PersonDetailDto, type PersonDto } from "../api/client";
+import {
+  api,
+  fetchPersonPhotos,
+  type PersonDetailDto,
+  type PersonDto,
+  type PhotoOutput,
+} from "../api/client";
 
 interface Props {
   person: PersonDto;
@@ -11,7 +17,9 @@ interface Props {
 
 export function PersonDetail({ person, t, onBack }: Props) {
   const [detail, setDetail] = useState<PersonDetailDto | null>(null);
+  const [photos, setPhotos] = useState<PhotoOutput[]>([]);
   const [loading, setLoading] = useState(true);
+  const [photosLoading, setPhotosLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(person.name);
@@ -25,6 +33,13 @@ export function PersonDetail({ person, t, onBack }: Props) {
       .then(setDetail)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
+
+    // Fetch photos from photo app
+    setPhotosLoading(true);
+    fetchPersonPhotos(person.id)
+      .then(setPhotos)
+      .catch(() => setPhotos([]))
+      .finally(() => setPhotosLoading(false));
   }, [person.id]);
 
   const handleSave = async () => {
@@ -78,8 +93,6 @@ export function PersonDetail({ person, t, onBack }: Props) {
   const data = detail ?? {
     ...person,
     faces: [],
-    media: [],
-    media_count: person.media_count,
   };
 
   return (
@@ -93,6 +106,7 @@ export function PersonDetail({ person, t, onBack }: Props) {
         {t("back")}
       </button>
 
+      {/* Person info card */}
       <Card>
         <div className="flex items-center gap-3 px-4 py-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent-subtle)]">
@@ -121,12 +135,14 @@ export function PersonDetail({ person, t, onBack }: Props) {
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold">{data.name}</span>
+                <span className="text-sm font-semibold">
+                  {data.name || t("unnamed")}
+                </span>
                 <button
                   type="button"
                   onClick={() => {
                     setEditing(true);
-                    setEditName(data.name);
+                    setEditName(data.name ?? "");
                   }}
                   className="cursor-pointer opacity-40 hover:opacity-100 transition"
                   title={t("edit")}
@@ -136,14 +152,48 @@ export function PersonDetail({ person, t, onBack }: Props) {
               </div>
             )}
             <span className="text-[11px] opacity-60">
-              {t("faceCount")}: {data.face_count}
-              {" · "}
-              {t("mediaCount")}: {data.media_count}
+              {data.face_count} {t("faceCount")}
+              {photos.length > 0 && ` · ${photos.length} ${t("mediaCount")}`}
             </span>
           </div>
         </div>
       </Card>
 
+      {/* Photos from photo app */}
+      <section className="flex flex-col gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide opacity-50">
+          {t("mediaCount")} ({photos.length})
+        </h3>
+        {photosLoading ? (
+          <div className="text-xs opacity-40">{t("loading")}</div>
+        ) : photos.length === 0 ? (
+          <div className="text-xs opacity-40">{t("noResult")}</div>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
+            {photos.map((photo) => (
+              <div
+                key={photo.id}
+                className="flex flex-col items-center gap-1 rounded border border-black/10 dark:border-white/10 p-2"
+              >
+                <img
+                  src={`/api/thumb/photo/${photo.id}?w=200&h=200`}
+                  alt={photo.filename}
+                  className="h-16 w-16 rounded object-cover"
+                  loading="lazy"
+                />
+                <span
+                  className="max-w-full truncate text-[10px] opacity-50"
+                  title={photo.filename}
+                >
+                  {photo.filename}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Face detections */}
       <section className="flex flex-col gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide opacity-50">
           {t("faceCount")} ({data.faces.length})
@@ -157,55 +207,14 @@ export function PersonDetail({ person, t, onBack }: Props) {
                 key={face.id}
                 className="flex flex-col items-center gap-1 rounded border border-black/10 dark:border-white/10 p-2"
               >
-                {face.thumbnail_path ? (
-                  <img
-                    src={`/api/apps/person/assets${face.thumbnail_path}`}
-                    alt=""
-                    className="h-14 w-14 rounded object-cover"
-                  />
-                ) : (
-                  <div className="flex h-14 w-14 items-center justify-center rounded bg-black/[0.05] dark:bg-white/[0.05]">
-                    <Users size={20} className="opacity-30" />
-                  </div>
-                )}
+                <img
+                  src={`/api/thumb/photo/${face.image_hash}?w=200&h=200`}
+                  alt=""
+                  className="h-14 w-14 rounded object-cover"
+                  loading="lazy"
+                />
                 <span className="text-[10px] opacity-50">
-                  {Math.round(face.confidence * 100)}%
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide opacity-50">
-          {t("mediaCount")} ({data.media.length})
-        </h3>
-        {data.media.length === 0 ? (
-          <div className="text-xs opacity-40">{t("noResult")}</div>
-        ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
-            {data.media.map((m) => (
-              <div
-                key={m.id}
-                className="flex flex-col items-center gap-1 rounded border border-black/10 dark:border-white/10 p-2"
-              >
-                {m.thumbnail_path ? (
-                  <img
-                    src={`/api/apps/person/assets${m.thumbnail_path}`}
-                    alt=""
-                    className="h-16 w-16 rounded object-cover"
-                  />
-                ) : (
-                  <div className="flex h-16 w-16 items-center justify-center rounded bg-black/[0.05] dark:bg-white/[0.05]">
-                    <Image size={20} className="opacity-30" />
-                  </div>
-                )}
-                <span
-                  className="max-w-full truncate text-[10px] opacity-50"
-                  title={m.path}
-                >
-                  {m.path.split("/").pop()}
+                  {face.source_app}
                 </span>
               </div>
             ))}
