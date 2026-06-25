@@ -63,6 +63,14 @@ pub struct PersonListResponse {
     total: u64,
 }
 
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PersonsByIdsReq {
+    #[ts(type = "string[]")]
+    pub person_ids: Vec<Uuid>,
+}
+
 pub async fn list_persons(
     State(ctx): State<Arc<AppCtx>>,
     TokimoUser { user_id }: TokimoUser,
@@ -92,6 +100,26 @@ pub async fn get_person(
         .await?
         .ok_or_else(|| AppError::NotFound("person not found".into()))?;
     Ok(Json(PersonDto::from(person)))
+}
+
+pub async fn persons_by_ids(
+    State(ctx): State<Arc<AppCtx>>,
+    TokimoUser { user_id }: TokimoUser,
+    Json(req): Json<PersonsByIdsReq>,
+) -> Result<Json<PersonListResponse>, AppError> {
+    let uid = parse_user_id(&user_id)?;
+    let persons = PersonRepo::list_by_ids(&ctx.db, uid, &req.person_ids).await?;
+    let total = persons.len() as u64;
+    let person_ids: Vec<Uuid> = persons.iter().map(|person| person.id).collect();
+    let media_counts = PersonRepo::media_counts(&ctx.db, &person_ids).await?;
+    let items = persons
+        .into_iter()
+        .map(|person| {
+            let media_count = media_counts.get(&person.id).copied().unwrap_or(0);
+            PersonDto::from_model(person, media_count)
+        })
+        .collect();
+    Ok(Json(PersonListResponse { items, total }))
 }
 
 // ── Person detail with faces ─────────────────────────────────────────────────
@@ -202,6 +230,29 @@ pub async fn update_person(
     Ok(Json(PersonDto::from(person)))
 }
 
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MergePersonsReq {
+    #[ts(type = "string")]
+    pub target_id: Uuid,
+    #[ts(type = "string")]
+    pub source_id: Uuid,
+}
+
+pub async fn merge_persons(
+    State(ctx): State<Arc<AppCtx>>,
+    TokimoUser { user_id }: TokimoUser,
+    Json(req): Json<MergePersonsReq>,
+) -> Result<Json<PersonDto>, AppError> {
+    let uid = parse_user_id(&user_id)?;
+    PersonRepo::merge_persons(&ctx.db, uid, req.source_id, req.target_id).await?;
+    let person = PersonRepo::get_by_id(&ctx.db, req.target_id, uid)
+        .await?
+        .ok_or_else(|| AppError::NotFound("target person not found".into()))?;
+    Ok(Json(PersonDto::from(person)))
+}
+
 // ── Bus API proxy handlers (for demo page testing) ──────────────────────────
 
 #[derive(Deserialize)]
@@ -241,6 +292,9 @@ pub struct MatchFaceReq {
 pub struct MatchFaceResponse {
     #[ts(type = "string")]
     pub person_id: Uuid,
+    #[ts(type = "string")]
+    pub face_cache_id: Uuid,
+    pub bbox: serde_json::Value,
     pub is_new: bool,
     pub similarity: f64,
 }
@@ -263,6 +317,68 @@ pub async fn match_face(
 
     Ok(Json(MatchFaceResponse {
         person_id: matched.person_id,
+        face_cache_id: matched.face_cache_id,
+        bbox: matched.bbox,
+        is_new: matched.is_new,
+        similarity: matched.similarity,
+    }))
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AssignFaceReq {
+    #[ts(type = "string")]
+    pub person_id: Uuid,
+    pub image_hash: String,
+    pub face_index: i32,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CreatePersonFromFaceReq {
+    pub name: Option<String>,
+    pub image_hash: String,
+    pub face_index: i32,
+}
+
+async fn resolve_face_cache_id(ctx: &AppCtx, image_hash: &str, face_index: i32) -> Result<Uuid, AppError> {
+    let face = FaceCacheRepo::get_by_image_hash_and_index(&ctx.db, image_hash, face_index)
+        .await?
+        .ok_or_else(|| AppError::NotFound("face not found in cache".into()))?;
+    Ok(face.id)
+}
+
+pub async fn assign_face(
+    State(ctx): State<Arc<AppCtx>>,
+    TokimoUser { user_id }: TokimoUser,
+    Json(req): Json<AssignFaceReq>,
+) -> Result<Json<MatchFaceResponse>, AppError> {
+    let uid = parse_user_id(&user_id)?;
+    let face_cache_id = resolve_face_cache_id(&ctx, &req.image_hash, req.face_index).await?;
+    let matched = PersonRepo::assign_face(&ctx.db, uid, req.person_id, face_cache_id).await?;
+    Ok(Json(MatchFaceResponse {
+        person_id: matched.person_id,
+        face_cache_id: matched.face_cache_id,
+        bbox: matched.bbox,
+        is_new: matched.is_new,
+        similarity: matched.similarity,
+    }))
+}
+
+pub async fn create_person_from_face(
+    State(ctx): State<Arc<AppCtx>>,
+    TokimoUser { user_id }: TokimoUser,
+    Json(req): Json<CreatePersonFromFaceReq>,
+) -> Result<Json<MatchFaceResponse>, AppError> {
+    let uid = parse_user_id(&user_id)?;
+    let face_cache_id = resolve_face_cache_id(&ctx, &req.image_hash, req.face_index).await?;
+    let matched = PersonRepo::create_person_from_face(&ctx.db, uid, face_cache_id, req.name).await?;
+    Ok(Json(MatchFaceResponse {
+        person_id: matched.person_id,
+        face_cache_id: matched.face_cache_id,
+        bbox: matched.bbox,
         is_new: matched.is_new,
         similarity: matched.similarity,
     }))

@@ -41,6 +41,21 @@ impl PersonRepo {
             .await?)
     }
 
+    pub async fn list_by_ids<C: ConnectionTrait>(
+        db: &C,
+        user_id: Uuid,
+        ids: &[Uuid],
+    ) -> Result<Vec<persons::Model>, AppError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(Entity::find()
+            .filter(Column::UserId.eq(user_id))
+            .filter(Column::Id.eq_any(ids.to_vec()))
+            .all(db)
+            .await?)
+    }
+
     pub async fn media_counts<C: ConnectionTrait>(db: &C, person_ids: &[Uuid]) -> Result<HashMap<Uuid, i32>, AppError> {
         let mut counts = HashMap::new();
         if person_ids.is_empty() {
@@ -256,6 +271,33 @@ impl PersonRepo {
         Ok(result.rows_affected)
     }
 
+    async fn delete_person_media_if_source_empty<C: ConnectionTrait>(
+        db: &C,
+        user_id: Uuid,
+        person_id: Uuid,
+        source_app: &str,
+        source_id: &str,
+    ) -> Result<(), AppError> {
+        let remaining = pf::Entity::find()
+            .filter(pf::Column::UserId.eq(user_id))
+            .filter(pf::Column::PersonId.eq(person_id))
+            .inner_join(image_face_cache::Entity)
+            .filter(image_face_cache::Column::SourceApp.eq(source_app))
+            .filter(image_face_cache::Column::SourceId.eq(source_id))
+            .count(db)
+            .await?;
+        if remaining == 0 {
+            pm::Entity::delete_many()
+                .filter(pm::Column::UserId.eq(user_id))
+                .filter(pm::Column::PersonId.eq(person_id))
+                .filter(pm::Column::SourceApp.eq(source_app))
+                .filter(pm::Column::SourceId.eq(source_id))
+                .exec(db)
+                .await?;
+        }
+        Ok(())
+    }
+
     pub async fn delete_source<C: ConnectionTrait + TransactionTrait>(
         db: &C,
         source_app: &str,
@@ -360,6 +402,127 @@ impl PersonRepo {
 
         txn.commit().await?;
         Ok(())
+    }
+
+    pub async fn assign_face<C: ConnectionTrait + TransactionTrait>(
+        db: &C,
+        user_id: Uuid,
+        person_id: Uuid,
+        face_cache_id: Uuid,
+    ) -> Result<FaceMatch, AppError> {
+        let txn = db.begin().await?;
+
+        let _target = Self::get_by_id(&txn, person_id, user_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("target person not found".into()))?;
+        let face = image_face_cache::Entity::find_by_id(face_cache_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::NotFound("face not found in cache".into()))?;
+
+        let existing = Self::get_face_link(&txn, user_id, face_cache_id).await?;
+        match existing {
+            Some(link) if link.person_id == person_id => {
+                Self::link_media(&txn, user_id, person_id, &face.source_app, &face.source_id).await?;
+                Self::recount_person(&txn, person_id).await?;
+            }
+            Some(link) => {
+                pf::Entity::update_many()
+                    .col_expr(pf::Column::PersonId, Expr::value(person_id))
+                    .filter(pf::Column::UserId.eq(user_id))
+                    .filter(pf::Column::FaceCacheId.eq(face_cache_id))
+                    .exec(&txn)
+                    .await?;
+                Self::link_media(&txn, user_id, person_id, &face.source_app, &face.source_id).await?;
+                Self::recount_person(&txn, link.person_id).await?;
+                Self::recount_person(&txn, person_id).await?;
+                Self::delete_person_media_if_source_empty(
+                    &txn,
+                    user_id,
+                    link.person_id,
+                    &face.source_app,
+                    &face.source_id,
+                )
+                .await?;
+                Entity::delete_many()
+                    .filter(Column::Id.eq(link.person_id))
+                    .filter(Column::UserId.eq(user_id))
+                    .filter(Column::FaceCount.eq(0))
+                    .exec(&txn)
+                    .await?;
+            }
+            None => {
+                Self::link_face(&txn, user_id, person_id, face_cache_id).await?;
+                Self::link_media(&txn, user_id, person_id, &face.source_app, &face.source_id).await?;
+                Self::recount_person(&txn, person_id).await?;
+            }
+        }
+
+        txn.commit().await?;
+        Ok(FaceMatch {
+            face_cache_id: face.id,
+            person_id,
+            bbox: face.bbox,
+            is_new: false,
+            similarity: 1.0,
+        })
+    }
+
+    pub async fn create_person_from_face<C: ConnectionTrait + TransactionTrait>(
+        db: &C,
+        user_id: Uuid,
+        face_cache_id: Uuid,
+        name: Option<String>,
+    ) -> Result<FaceMatch, AppError> {
+        let txn = db.begin().await?;
+
+        let face = image_face_cache::Entity::find_by_id(face_cache_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::NotFound("face not found in cache".into()))?;
+        let old_link = Self::get_face_link(&txn, user_id, face_cache_id).await?;
+        let person = Self::create(&txn, user_id, name).await?;
+
+        match old_link {
+            Some(link) => {
+                pf::Entity::update_many()
+                    .col_expr(pf::Column::PersonId, Expr::value(person.id))
+                    .filter(pf::Column::UserId.eq(user_id))
+                    .filter(pf::Column::FaceCacheId.eq(face_cache_id))
+                    .exec(&txn)
+                    .await?;
+                Self::recount_person(&txn, link.person_id).await?;
+                Self::delete_person_media_if_source_empty(
+                    &txn,
+                    user_id,
+                    link.person_id,
+                    &face.source_app,
+                    &face.source_id,
+                )
+                .await?;
+                Entity::delete_many()
+                    .filter(Column::Id.eq(link.person_id))
+                    .filter(Column::UserId.eq(user_id))
+                    .filter(Column::FaceCount.eq(0))
+                    .exec(&txn)
+                    .await?;
+            }
+            None => {
+                Self::link_face(&txn, user_id, person.id, face_cache_id).await?;
+            }
+        }
+
+        Self::link_media(&txn, user_id, person.id, &face.source_app, &face.source_id).await?;
+        Self::recount_person(&txn, person.id).await?;
+
+        txn.commit().await?;
+        Ok(FaceMatch {
+            face_cache_id: face.id,
+            person_id: person.id,
+            bbox: face.bbox,
+            is_new: true,
+            similarity: 1.0,
+        })
     }
 
     pub async fn match_face<C: ConnectionTrait + TransactionTrait>(

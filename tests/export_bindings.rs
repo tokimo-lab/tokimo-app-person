@@ -2,8 +2,9 @@
 //! Generates TypeScript types to `ui/src/generated/rust-types/`.
 
 use tokimo_app_person::handlers::{
-    DeleteSourceResponse, FaceDetailDto, MatchFaceResponse, PersonDetailDto, PersonDto, PersonListResponse,
-    RegisterFacesResponse, SourceMediaDto, UpdatePersonReq,
+    AssignFaceReq, CreatePersonFromFaceReq, DeleteSourceResponse, FaceDetailDto, MatchFaceResponse, MergePersonsReq,
+    PersonDetailDto, PersonDto, PersonListResponse, PersonsByIdsReq, RegisterFacesResponse, SourceMediaDto,
+    UpdatePersonReq,
 };
 use ts_rs::{Config, TS};
 
@@ -17,7 +18,11 @@ fn export_bindings() {
     SourceMediaDto::export_all(&cfg).unwrap();
     PersonDetailDto::export_all(&cfg).unwrap();
     UpdatePersonReq::export_all(&cfg).unwrap();
+    PersonsByIdsReq::export_all(&cfg).unwrap();
+    MergePersonsReq::export_all(&cfg).unwrap();
     RegisterFacesResponse::export_all(&cfg).unwrap();
     MatchFaceResponse::export_all(&cfg).unwrap();
+    AssignFaceReq::export_all(&cfg).unwrap();
+    CreatePersonFromFaceReq::export_all(&cfg).unwrap();
     DeleteSourceResponse::export_all(&cfg).unwrap();
 }

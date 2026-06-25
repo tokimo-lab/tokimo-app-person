@@ -35,6 +35,11 @@ fn get_user_id(caller: &CallerCtx) -> Result<Uuid, BusError> {
 pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuilder {
     let ctx_register = ctx.clone();
     let ctx_match = ctx.clone();
+    let ctx_persons_by_ids = ctx.clone();
+    let ctx_update = ctx.clone();
+    let ctx_merge = ctx.clone();
+    let ctx_assign = ctx.clone();
+    let ctx_create_from_face = ctx.clone();
     let ctx_delete = ctx.clone();
     let ctx_dispatch_delete = ctx.clone();
     let ctx_dispatch_register = ctx.clone();
@@ -110,6 +115,161 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                     similarity: matched.similarity,
                 };
                 serde_json::to_vec(&resp).map_err(|e| BusError::Internal(e.to_string()))
+            }
+        })
+        .method(decl(
+            "persons_by_ids",
+            "Fetch persons by id for a user",
+        ))
+        .on_invoke("persons_by_ids", move |req| {
+            let ctx = ctx_persons_by_ids.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct Req {
+                    person_ids: Vec<Uuid>,
+                }
+                let body: Req = decode_json(&req.payload)?;
+                let user_id = get_user_id(&req.caller)?;
+                let persons = PersonRepo::list_by_ids(&ctx.db, user_id, &body.person_ids)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?;
+                let person_ids: Vec<Uuid> = persons.iter().map(|person| person.id).collect();
+                let media_counts = PersonRepo::media_counts(&ctx.db, &person_ids)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?;
+                #[derive(serde::Serialize)]
+                struct PersonItem {
+                    id: Uuid,
+                    name: Option<String>,
+                    avatar_url: Option<String>,
+                    face_count: i32,
+                    media_count: i32,
+                }
+                let items: Vec<PersonItem> = persons
+                    .into_iter()
+                    .map(|person| PersonItem {
+                        media_count: media_counts.get(&person.id).copied().unwrap_or(0),
+                        id: person.id,
+                        name: person.name,
+                        avatar_url: person.avatar_url,
+                        face_count: person.face_count,
+                    })
+                    .collect();
+                serde_json::to_vec(&items).map_err(|e| BusError::Internal(e.to_string()))
+            }
+        })
+        .method(decl(
+            "update_person",
+            "Update a person profile for a user",
+        ))
+        .on_invoke("update_person", move |req| {
+            let ctx = ctx_update.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct Req {
+                    person_id: Uuid,
+                    name: Option<String>,
+                    avatar_url: Option<String>,
+                }
+                let body: Req = decode_json(&req.payload)?;
+                let user_id = get_user_id(&req.caller)?;
+                let person = PersonRepo::update(&ctx.db, body.person_id, user_id, body.name, body.avatar_url)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?
+                    .ok_or_else(|| BusError::BadRequest("person not found".into()))?;
+                serde_json::to_vec(&serde_json::json!({
+                    "id": person.id,
+                    "name": person.name,
+                    "avatar_url": person.avatar_url,
+                    "face_count": person.face_count,
+                    "media_count": 0,
+                }))
+                .map_err(|e| BusError::Internal(e.to_string()))
+            }
+        })
+        .method(decl(
+            "merge_persons",
+            "Merge one person into another for a user",
+        ))
+        .on_invoke("merge_persons", move |req| {
+            let ctx = ctx_merge.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct Req {
+                    source_id: Uuid,
+                    target_id: Uuid,
+                }
+                let body: Req = decode_json(&req.payload)?;
+                let user_id = get_user_id(&req.caller)?;
+                PersonRepo::merge_persons(&ctx.db, user_id, body.source_id, body.target_id)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?;
+                serde_json::to_vec(&serde_json::json!({"success": true}))
+                    .map_err(|e| BusError::Internal(e.to_string()))
+            }
+        })
+        .method(decl(
+            "assign_face",
+            "Assign a cached face to an existing person",
+        ))
+        .on_invoke("assign_face", move |req| {
+            let ctx = ctx_assign.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct Req {
+                    person_id: Uuid,
+                    image_hash: String,
+                    face_index: i32,
+                }
+                let body: Req = decode_json(&req.payload)?;
+                let user_id = get_user_id(&req.caller)?;
+                let face = FaceCacheRepo::get_by_image_hash_and_index(&ctx.db, &body.image_hash, body.face_index)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?
+                    .ok_or_else(|| BusError::BadRequest("face not found in cache".into()))?;
+                let matched = PersonRepo::assign_face(&ctx.db, user_id, body.person_id, face.id)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?;
+                serde_json::to_vec(&serde_json::json!({
+                    "face_cache_id": matched.face_cache_id,
+                    "person_id": matched.person_id,
+                    "bbox": matched.bbox,
+                    "is_new": matched.is_new,
+                    "similarity": matched.similarity,
+                }))
+                .map_err(|e| BusError::Internal(e.to_string()))
+            }
+        })
+        .method(decl(
+            "create_person_from_face",
+            "Create a person and assign a cached face to it",
+        ))
+        .on_invoke("create_person_from_face", move |req| {
+            let ctx = ctx_create_from_face.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct Req {
+                    name: Option<String>,
+                    image_hash: String,
+                    face_index: i32,
+                }
+                let body: Req = decode_json(&req.payload)?;
+                let user_id = get_user_id(&req.caller)?;
+                let face = FaceCacheRepo::get_by_image_hash_and_index(&ctx.db, &body.image_hash, body.face_index)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?
+                    .ok_or_else(|| BusError::BadRequest("face not found in cache".into()))?;
+                let matched = PersonRepo::create_person_from_face(&ctx.db, user_id, face.id, body.name)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?;
+                serde_json::to_vec(&serde_json::json!({
+                    "face_cache_id": matched.face_cache_id,
+                    "person_id": matched.person_id,
+                    "bbox": matched.bbox,
+                    "is_new": matched.is_new,
+                    "similarity": matched.similarity,
+                }))
+                .map_err(|e| BusError::Internal(e.to_string()))
             }
         })
         .method(decl(

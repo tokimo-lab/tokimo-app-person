@@ -1,10 +1,6 @@
 use std::sync::Arc;
 
-use axum::{
-    Router,
-    middleware,
-    routing::get,
-};
+use axum::{Router, middleware, routing::get};
 use tokimo_bus_protocol::{BusListener, DataPlaneSocket};
 use tracing::{error, info};
 
@@ -28,17 +24,19 @@ pub async fn spawn(service: &str, ctx: Arc<AppState>) -> anyhow::Result<DataPlan
 fn build_router(ctx: Arc<AppState>) -> Router {
     Router::new()
         .route("/persons", get(handlers::list_persons))
-        .route(
-            "/persons/{id}",
-            get(handlers::get_person).put(handlers::update_person),
-        )
+        .route("/persons/by-ids", axum::routing::post(handlers::persons_by_ids))
+        .route("/persons/merge", axum::routing::post(handlers::merge_persons))
+        .route("/persons/{id}", get(handlers::get_person).put(handlers::update_person))
         .route("/persons/{id}/detail", get(handlers::get_person_detail))
         .route("/register-faces", axum::routing::post(handlers::register_faces))
         .route("/match-face", axum::routing::post(handlers::match_face))
+        .route("/assign-face", axum::routing::post(handlers::assign_face))
+        .route(
+            "/create-person-from-face",
+            axum::routing::post(handlers::create_person_from_face),
+        )
         .route("/delete-source", axum::routing::post(handlers::delete_source))
         .route("/assets/{*path}", get(assets::serve))
-        .layer(middleware::from_fn(
-            tokimo_bus_protocol::task_local::auth_middleware,
-        ))
+        .layer(middleware::from_fn(tokimo_bus_protocol::task_local::auth_middleware))
         .with_state(ctx)
 }

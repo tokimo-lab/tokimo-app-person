@@ -67,6 +67,18 @@ impl FaceCacheRepo {
             .await?)
     }
 
+    pub async fn get_by_image_hash_and_index<C: ConnectionTrait>(
+        db: &C,
+        image_hash: &str,
+        face_index: i32,
+    ) -> Result<Option<image_face_cache::Model>, AppError> {
+        Ok(Entity::find()
+            .filter(Column::ImageHash.eq(image_hash))
+            .filter(Column::FaceIndex.eq(face_index))
+            .one(db)
+            .await?)
+    }
+
     pub async fn get_by_id<C: ConnectionTrait>(db: &C, id: Uuid) -> Result<Option<image_face_cache::Model>, AppError> {
         Ok(Entity::find_by_id(id).one(db).await?)
     }
