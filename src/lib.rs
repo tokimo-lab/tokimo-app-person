@@ -6,4 +6,5 @@ pub mod bus_clients;
 pub mod db;
 pub mod error;
 pub mod handlers;
+pub mod services;
 pub mod state;

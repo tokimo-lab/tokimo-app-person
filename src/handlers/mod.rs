@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::{
     db::repos::{face_cache_repo::FaceCacheRepo, person_repo::PersonRepo},
     error::AppError,
+    services::person_events::emit_person_event,
 };
 
 pub type AppCtx = crate::state::AppState;
@@ -224,9 +225,17 @@ pub async fn update_person(
     Json(req): Json<UpdatePersonReq>,
 ) -> Result<Json<PersonDto>, AppError> {
     let uid = parse_user_id(&user_id)?;
+    let mut changed_fields = Vec::new();
+    if req.name.is_some() {
+        changed_fields.push("name");
+    }
+    if req.avatar_url.is_some() {
+        changed_fields.push("avatarUrl");
+    }
     let person = PersonRepo::update(&ctx.db, id, uid, req.name, req.avatar_url)
         .await?
         .ok_or_else(|| AppError::NotFound("person not found".into()))?;
+    emit_person_event(&ctx, uid, "updated", person.id, vec![person.id], &changed_fields).await;
     Ok(Json(PersonDto::from(person)))
 }
 
@@ -250,6 +259,15 @@ pub async fn merge_persons(
     let person = PersonRepo::get_by_id(&ctx.db, req.target_id, uid)
         .await?
         .ok_or_else(|| AppError::NotFound("target person not found".into()))?;
+    emit_person_event(
+        &ctx,
+        uid,
+        "merged",
+        req.target_id,
+        vec![req.target_id, req.source_id],
+        &["identity", "faces", "media"],
+    )
+    .await;
     Ok(Json(PersonDto::from(person)))
 }
 
@@ -314,6 +332,15 @@ pub async fn match_face(
         .ok_or_else(|| AppError::NotFound("face not found in cache".into()))?;
 
     let matched = PersonRepo::match_face(&ctx.db, uid, face.id, 0.68).await?;
+    emit_person_event(
+        &ctx,
+        uid,
+        if matched.is_new { "created" } else { "faces_changed" },
+        matched.person_id,
+        vec![matched.person_id],
+        &["faces", "media"],
+    )
+    .await;
 
     Ok(Json(MatchFaceResponse {
         person_id: matched.person_id,
@@ -358,6 +385,15 @@ pub async fn assign_face(
     let uid = parse_user_id(&user_id)?;
     let face_cache_id = resolve_face_cache_id(&ctx, &req.image_hash, req.face_index).await?;
     let matched = PersonRepo::assign_face(&ctx.db, uid, req.person_id, face_cache_id).await?;
+    emit_person_event(
+        &ctx,
+        uid,
+        "faces_changed",
+        matched.person_id,
+        vec![matched.person_id],
+        &["faces", "media"],
+    )
+    .await;
     Ok(Json(MatchFaceResponse {
         person_id: matched.person_id,
         face_cache_id: matched.face_cache_id,
@@ -375,6 +411,15 @@ pub async fn create_person_from_face(
     let uid = parse_user_id(&user_id)?;
     let face_cache_id = resolve_face_cache_id(&ctx, &req.image_hash, req.face_index).await?;
     let matched = PersonRepo::create_person_from_face(&ctx.db, uid, face_cache_id, req.name).await?;
+    emit_person_event(
+        &ctx,
+        uid,
+        "created",
+        matched.person_id,
+        vec![matched.person_id],
+        &["identity", "faces", "media"],
+    )
+    .await;
     Ok(Json(MatchFaceResponse {
         person_id: matched.person_id,
         face_cache_id: matched.face_cache_id,

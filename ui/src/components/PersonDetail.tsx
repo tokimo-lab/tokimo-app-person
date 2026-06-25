@@ -23,9 +23,10 @@ interface Props {
   person: PersonDto;
   t: (key: string) => string;
   onBack: () => void;
+  refreshToken?: number;
 }
 
-export function PersonDetail({ person, t, onBack }: Props) {
+export function PersonDetail({ person, t, onBack, refreshToken }: Props) {
   const [detail, setDetail] = useState<PersonDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,7 @@ export function PersonDetail({ person, t, onBack }: Props) {
       .then(setDetail)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, [person.id]);
+  }, [person.id, refreshToken]);
 
   const handleSave = async () => {
     if (!editName.trim()) return;

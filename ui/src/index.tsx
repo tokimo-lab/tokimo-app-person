@@ -14,7 +14,7 @@ import {
   zhCN as uiZhCN,
 } from "@tokimo/ui";
 import { FlaskConical, Users } from "lucide-react";
-import { StrictMode, useMemo, useState } from "react";
+import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { enUS, zhCN } from "./i18n";
 import "./index.css";
@@ -33,6 +33,34 @@ function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
   const [view, setView] = useState<View>("list");
   const [selected, setSelected] = useState<PersonDto | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [personEventsVersion, setPersonEventsVersion] = useState(0);
+  const seenPersonEventIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    return ctx.shell.appEntityEvents.subscribe({
+      appId: "person",
+      kind: "person",
+      onEvent: (event) => {
+        const payload = event.payload;
+        const eventId =
+          typeof payload === "object" &&
+          payload !== null &&
+          typeof (payload as { eventId?: unknown }).eventId === "string"
+            ? (payload as { eventId: string }).eventId
+            : null;
+        if (eventId) {
+          const seen = seenPersonEventIdsRef.current;
+          if (seen.has(eventId)) return;
+          seen.add(eventId);
+          if (seen.size > 256) {
+            const first = seen.values().next().value;
+            if (typeof first === "string") seen.delete(first);
+          }
+        }
+        setPersonEventsVersion((value) => value + 1);
+      },
+    });
+  }, [ctx.shell.appEntityEvents]);
 
   const menuBarConfig = useMemo<MenuBarConfig>(
     () => ({
@@ -88,10 +116,16 @@ function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
             t={t}
             onSelect={handleSelect}
             onDebugOpen={() => setDebugOpen(true)}
+            refreshToken={personEventsVersion}
           />
         )}
         {view === "detail" && selected && (
-          <PersonDetail person={selected} t={t} onBack={handleBack} />
+          <PersonDetail
+            person={selected}
+            t={t}
+            onBack={handleBack}
+            refreshToken={personEventsVersion}
+          />
         )}
       </main>
 

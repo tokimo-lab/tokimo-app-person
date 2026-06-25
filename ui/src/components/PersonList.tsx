@@ -17,9 +17,10 @@ interface Props {
   t: (key: string) => string;
   onSelect: (person: PersonDto) => void;
   onDebugOpen: () => void;
+  refreshToken?: number;
 }
 
-export function PersonList({ t, onSelect, onDebugOpen }: Props) {
+export function PersonList({ t, onSelect, onDebugOpen, refreshToken }: Props) {
   const [persons, setPersons] = useState<PersonDto[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -39,7 +40,7 @@ export function PersonList({ t, onSelect, onDebugOpen }: Props) {
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, [offset]);
+  }, [offset, refreshToken]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

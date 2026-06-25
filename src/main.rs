@@ -23,6 +23,7 @@ mod db;
 mod error;
 mod handlers;
 mod queue;
+mod services;
 mod state;
 
 use std::sync::{Arc, OnceLock};

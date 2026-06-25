@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     db::repos::{face_cache_repo::FaceCacheRepo, person_repo::PersonRepo},
+    services::person_events::emit_person_event,
     state::AppState,
 };
 
@@ -98,6 +99,15 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                 let matched = PersonRepo::match_face(&ctx.db, user_id, face.id, 0.68)
                     .await
                     .map_err(|e| BusError::Internal(e.to_string()))?;
+                emit_person_event(
+                    &ctx,
+                    user_id,
+                    if matched.is_new { "created" } else { "faces_changed" },
+                    matched.person_id,
+                    vec![matched.person_id],
+                    &["faces", "media"],
+                )
+                .await;
 
                 #[derive(serde::Serialize)]
                 struct Resp {
@@ -173,10 +183,18 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                 }
                 let body: Req = decode_json(&req.payload)?;
                 let user_id = get_user_id(&req.caller)?;
+                let mut changed_fields = Vec::new();
+                if body.name.is_some() {
+                    changed_fields.push("name");
+                }
+                if body.avatar_url.is_some() {
+                    changed_fields.push("avatarUrl");
+                }
                 let person = PersonRepo::update(&ctx.db, body.person_id, user_id, body.name, body.avatar_url)
                     .await
                     .map_err(|e| BusError::Internal(e.to_string()))?
                     .ok_or_else(|| BusError::BadRequest("person not found".into()))?;
+                emit_person_event(&ctx, user_id, "updated", person.id, vec![person.id], &changed_fields).await;
                 serde_json::to_vec(&serde_json::json!({
                     "id": person.id,
                     "name": person.name,
@@ -204,6 +222,15 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                 PersonRepo::merge_persons(&ctx.db, user_id, body.source_id, body.target_id)
                     .await
                     .map_err(|e| BusError::Internal(e.to_string()))?;
+                emit_person_event(
+                    &ctx,
+                    user_id,
+                    "merged",
+                    body.target_id,
+                    vec![body.target_id, body.source_id],
+                    &["identity", "faces", "media"],
+                )
+                .await;
                 serde_json::to_vec(&serde_json::json!({"success": true}))
                     .map_err(|e| BusError::Internal(e.to_string()))
             }
@@ -230,6 +257,15 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                 let matched = PersonRepo::assign_face(&ctx.db, user_id, body.person_id, face.id)
                     .await
                     .map_err(|e| BusError::Internal(e.to_string()))?;
+                emit_person_event(
+                    &ctx,
+                    user_id,
+                    "faces_changed",
+                    matched.person_id,
+                    vec![matched.person_id],
+                    &["faces", "media"],
+                )
+                .await;
                 serde_json::to_vec(&serde_json::json!({
                     "face_cache_id": matched.face_cache_id,
                     "person_id": matched.person_id,
@@ -262,6 +298,15 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                 let matched = PersonRepo::create_person_from_face(&ctx.db, user_id, face.id, body.name)
                     .await
                     .map_err(|e| BusError::Internal(e.to_string()))?;
+                emit_person_event(
+                    &ctx,
+                    user_id,
+                    "created",
+                    matched.person_id,
+                    vec![matched.person_id],
+                    &["identity", "faces", "media"],
+                )
+                .await;
                 serde_json::to_vec(&serde_json::json!({
                     "face_cache_id": matched.face_cache_id,
                     "person_id": matched.person_id,
