@@ -3,7 +3,9 @@ import {
   type Dispose,
   defineApp,
   makeTranslator,
+  type MenuBarConfig,
   RuntimeProvider,
+  useMenuBar,
 } from "@tokimo/sdk";
 import {
   ConfigProvider,
@@ -12,24 +14,40 @@ import {
   zhCN as uiZhCN,
 } from "@tokimo/ui";
 import { FlaskConical, Users } from "lucide-react";
-import { StrictMode, useState } from "react";
+import { StrictMode, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { enUS, zhCN } from "./i18n";
 import "./index.css";
 import { type PersonDto } from "./api/client";
-import { MatchFacePanel } from "./components/MatchFacePanel";
+import { PersonDebugPanel } from "./components/PersonDebugPanel";
 import { PersonDetail } from "./components/PersonDetail";
 import { PersonList } from "./components/PersonList";
-import { RegisterFacesPanel } from "./components/RegisterFacesPanel";
 
 type View = "list" | "detail";
-type Tab = "persons" | "test";
 
 function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
-  const t = makeTranslator({ "zh-CN": zhCN, "en-US": enUS }, ctx.locale);
-  const [tab, setTab] = useState<Tab>("persons");
+  const t = useMemo(
+    () => makeTranslator({ "zh-CN": zhCN, "en-US": enUS }, ctx.locale),
+    [ctx.locale],
+  );
   const [view, setView] = useState<View>("list");
   const [selected, setSelected] = useState<PersonDto | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
+
+  const menuBarConfig = useMemo<MenuBarConfig>(
+    () => ({
+      appMenu: [
+        {
+          key: "person-debug-tools",
+          label: t("debugMenu"),
+          icon: <FlaskConical size={14} />,
+          onClick: () => setDebugOpen(true),
+        },
+      ],
+    }),
+    [t],
+  );
+  useMenuBar(menuBarConfig);
 
   const handleSelect = (person: PersonDto) => {
     setSelected(person);
@@ -42,10 +60,11 @@ function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
   };
 
   const handlePersonClick = (personId: string) => {
-    setTab("persons");
+    setDebugOpen(false);
     handleSelect({
       id: personId,
-      name: "",
+      name: null,
+      avatar_url: null,
       face_count: 0,
       media_count: 0,
       created_at: "",
@@ -54,57 +73,28 @@ function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
   };
 
   return (
-    <div className="flex h-full w-full flex-col text-[var(--color-fg-primary)]">
-      <header className="flex items-center gap-3 border-b border-black/10 dark:border-white/10 px-4 py-3">
-        <Users size={20} style={{ color: "var(--color-accent)" }} />
+    <div className="relative flex h-full w-full flex-col bg-surface-base text-fg-primary">
+      <header className="flex items-center gap-3 border-b border-base px-4 py-3">
+        <Users size={20} className="text-accent-text" />
         <div className="flex flex-col">
           <span className="text-sm font-semibold">{t("title")}</span>
-          <span className="text-[10px] opacity-60">{t("subtitle")}</span>
-        </div>
-        <div className="flex-1" />
-        <div className="flex gap-1">
-          <button
-            type="button"
-            className={`cursor-pointer rounded px-2.5 py-1 text-[11px] transition ${
-              tab === "persons"
-                ? "bg-[var(--color-accent)] text-white"
-                : "opacity-60 hover:opacity-100"
-            }`}
-            onClick={() => setTab("persons")}
-          >
-            {t("persons")}
-          </button>
-          <button
-            type="button"
-            className={`cursor-pointer rounded px-2.5 py-1 text-[11px] transition flex items-center gap-1 ${
-              tab === "test"
-                ? "bg-[var(--color-accent)] text-white"
-                : "opacity-60 hover:opacity-100"
-            }`}
-            onClick={() => setTab("test")}
-          >
-            <FlaskConical size={12} />
-            {t("testTab")}
-          </button>
+          <span className="text-xs text-fg-secondary">{t("subtitle")}</span>
         </div>
       </header>
 
       <main className="flex-1 overflow-auto p-4">
-        {tab === "persons" && (
-          <>
-            {view === "list" && <PersonList t={t} onSelect={handleSelect} />}
-            {view === "detail" && selected && (
-              <PersonDetail person={selected} t={t} onBack={handleBack} />
-            )}
-          </>
-        )}
-        {tab === "test" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <MatchFacePanel t={t} onPersonClick={handlePersonClick} />
-            <RegisterFacesPanel t={t} />
-          </div>
+        {view === "list" && <PersonList t={t} onSelect={handleSelect} />}
+        {view === "detail" && selected && (
+          <PersonDetail person={selected} t={t} onBack={handleBack} />
         )}
       </main>
+
+      <PersonDebugPanel
+        open={debugOpen}
+        t={t}
+        onClose={() => setDebugOpen(false)}
+        onPersonClick={handlePersonClick}
+      />
     </div>
   );
 }

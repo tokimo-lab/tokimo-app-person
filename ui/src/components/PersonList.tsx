@@ -1,5 +1,5 @@
 import { Card, Empty, Input } from "@tokimo/ui";
-import { Search, Users } from "lucide-react";
+import { Image, Search, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, type PersonDto } from "../api/client";
 
@@ -33,8 +33,11 @@ export function PersonList({ t, onSelect }: Props) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return persons;
-    return persons.filter((p) => p.name.toLowerCase().includes(q));
-  }, [persons, query]);
+    return persons.filter((person) => {
+      const name = person.name?.toLowerCase() ?? t("unnamed").toLowerCase();
+      return name.includes(q);
+    });
+  }, [persons, query, t]);
 
   const hasMore = offset + limit < total;
 
@@ -56,11 +59,16 @@ export function PersonList({ t, onSelect }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="relative">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <span className="text-base font-semibold">{t("peopleLibrary")}</span>
+        <span className="text-xs text-fg-secondary">{t("peopleIntro")}</span>
+      </div>
+
+      <div className="relative max-w-md">
         <Search
           size={12}
-          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 opacity-50 z-10"
+          className="pointer-events-none absolute left-2 top-1/2 z-10 -translate-y-1/2 text-fg-muted"
         />
         <Input
           value={query}
@@ -74,24 +82,42 @@ export function PersonList({ t, onSelect }: Props) {
       {filtered.length === 0 ? (
         <Empty description={t("noPersons")} />
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
           {filtered.map((person) => (
             <Card
               key={person.id}
-              className="cursor-pointer transition hover:border-[var(--color-accent)] hover:shadow-sm"
+              className="cursor-pointer overflow-hidden border-base bg-surface-raised transition hover:border-accent hover:shadow-sm"
               onClick={() => onSelect(person)}
             >
-              <div className="flex items-center gap-3 px-4 py-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-accent-subtle)]">
-                  <Users size={16} className="text-[var(--color-accent)]" />
+              <div className="flex flex-col gap-3 p-3">
+                <div className="relative aspect-square overflow-hidden rounded-md bg-accent-subtle">
+                  {person.avatar_url ? (
+                    <img
+                      src={person.avatar_url}
+                      alt={person.name ?? t("unnamed")}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <Users size={34} className="text-accent-text" />
+                    </div>
+                  )}
                 </div>
-                <div className="flex flex-1 flex-col">
-                  <span className="text-sm font-medium">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="truncate text-sm font-semibold">
                     {person.name || t("unnamed")}
                   </span>
-                  <span className="text-[11px] opacity-60">
-                    {person.face_count} {t("faceCount")}
-                  </span>
+                  <div className="flex items-center gap-3 text-xs text-fg-secondary">
+                    <span className="flex items-center gap-1">
+                      <Users size={12} />
+                      {person.face_count}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Image size={12} />
+                      {person.media_count}
+                    </span>
+                  </div>
                 </div>
               </div>
             </Card>
@@ -105,18 +131,18 @@ export function PersonList({ t, onSelect }: Props) {
             type="button"
             disabled={offset === 0}
             onClick={() => setOffset(Math.max(0, offset - limit))}
-            className="cursor-pointer rounded px-3 py-1.5 text-xs transition hover:bg-black/[0.05] dark:hover:bg-white/[0.05] disabled:opacity-40"
+            className="cursor-pointer rounded px-3 py-1.5 text-xs text-fg-secondary transition hover:bg-fill-secondary disabled:opacity-40"
           >
             ← {t("back")}
           </button>
-          <span className="text-[11px] opacity-50">
+          <span className="text-xs text-fg-muted">
             {offset + 1}–{Math.min(offset + limit, total)} / {total}
           </span>
           <button
             type="button"
             disabled={!hasMore}
             onClick={() => setOffset(offset + limit)}
-            className="cursor-pointer rounded px-3 py-1.5 text-xs transition hover:bg-black/[0.05] dark:hover:bg-white/[0.05] disabled:opacity-40"
+            className="cursor-pointer rounded px-3 py-1.5 text-xs text-fg-secondary transition hover:bg-fill-secondary disabled:opacity-40"
           >
             {t("detail")} →
           </button>

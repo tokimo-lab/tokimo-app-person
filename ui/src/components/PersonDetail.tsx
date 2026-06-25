@@ -1,13 +1,23 @@
 import { Button, Card, Input } from "@tokimo/ui";
-import { ArrowLeft, Image, Pencil, Save, Users, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Database,
+  Image,
+  Pencil,
+  Save,
+  UserRound,
+  Users,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   api,
-  fetchPersonPhotos,
+  type FaceDetailDto,
   type PersonDetailDto,
   type PersonDto,
-  type PhotoOutput,
+  type SourceMediaDto,
 } from "../api/client";
+import { getSourceLabel, getSourceThumbnailUrl } from "../lib/sourcePreview";
 
 interface Props {
   person: PersonDto;
@@ -17,12 +27,10 @@ interface Props {
 
 export function PersonDetail({ person, t, onBack }: Props) {
   const [detail, setDetail] = useState<PersonDetailDto | null>(null);
-  const [photos, setPhotos] = useState<PhotoOutput[]>([]);
   const [loading, setLoading] = useState(true);
-  const [photosLoading, setPhotosLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [editName, setEditName] = useState(person.name);
+  const [editName, setEditName] = useState(person.name ?? "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -33,13 +41,6 @@ export function PersonDetail({ person, t, onBack }: Props) {
       .then(setDetail)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-
-    // Fetch photos from photo app
-    setPhotosLoading(true);
-    fetchPersonPhotos(person.id)
-      .then(setPhotos)
-      .catch(() => setPhotos([]))
-      .finally(() => setPhotosLoading(false));
   }, [person.id]);
 
   const handleSave = async () => {
@@ -49,7 +50,7 @@ export function PersonDetail({ person, t, onBack }: Props) {
       const updated = await api.updatePerson(person.id, {
         name: editName.trim(),
       });
-      setDetail(updated);
+      setDetail((current) => (current ? { ...current, ...updated } : null));
       setEditing(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -60,7 +61,7 @@ export function PersonDetail({ person, t, onBack }: Props) {
 
   const handleCancel = () => {
     setEditing(false);
-    setEditName(detail?.name ?? person.name);
+    setEditName(detail?.name ?? person.name ?? "");
   };
 
   if (loading) {
@@ -93,50 +94,85 @@ export function PersonDetail({ person, t, onBack }: Props) {
   const data = detail ?? {
     ...person,
     faces: [],
+    media: [],
   };
+  const displayName = data.name || t("unnamed");
+  const previewSource = data.faces[0] ?? data.media[0] ?? null;
+  const avatarUrl =
+    data.avatar_url ??
+    (previewSource
+      ? getSourceThumbnailUrl(
+          {
+            sourceApp: previewSource.source_app,
+            sourceId: previewSource.source_id,
+          },
+          320,
+        )
+      : null);
+  const media = buildMediaList(data.media, data.faces);
 
   return (
     <div className="flex flex-col gap-4">
       <button
         type="button"
         onClick={onBack}
-        className="cursor-pointer flex items-center gap-1 text-xs opacity-60 hover:opacity-100 transition"
+        className="flex cursor-pointer items-center gap-1 text-xs text-fg-secondary transition hover:text-fg-primary"
       >
         <ArrowLeft size={14} />
         {t("back")}
       </button>
 
-      {/* Person info card */}
       <Card>
-        <div className="flex items-center gap-3 px-4 py-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent-subtle)]">
-            <Users size={18} className="text-[var(--color-accent)]" />
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+          <div className="h-28 w-28 overflow-hidden rounded-lg bg-accent-subtle">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={displayName}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <UserRound size={44} className="text-accent-text" />
+              </div>
+            )}
           </div>
-          <div className="flex flex-1 flex-col">
+
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
             {editing ? (
               <div className="flex items-center gap-2">
                 <Input
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   size="small"
-                  className="flex-1"
+                  className="min-w-0 flex-1"
                   onKeyDown={(e) => e.key === "Enter" && handleSave()}
+                  autoFocus
                 />
                 <Button
                   size="small"
                   onClick={handleSave}
                   disabled={saving || !editName.trim()}
+                  aria-label={t("save")}
+                  className="cursor-pointer"
                 >
                   <Save size={12} />
                 </Button>
-                <Button size="small" variant="text" onClick={handleCancel}>
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={handleCancel}
+                  aria-label={t("cancel")}
+                  className="cursor-pointer"
+                >
                   <X size={12} />
                 </Button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold">
-                  {data.name || t("unnamed")}
+                <span className="min-w-0 truncate text-lg font-semibold">
+                  {displayName}
                 </span>
                 <button
                   type="button"
@@ -144,77 +180,70 @@ export function PersonDetail({ person, t, onBack }: Props) {
                     setEditing(true);
                     setEditName(data.name ?? "");
                   }}
-                  className="cursor-pointer opacity-40 hover:opacity-100 transition"
+                  className="cursor-pointer rounded p-1 text-fg-muted transition hover:bg-fill-secondary hover:text-fg-primary"
                   title={t("edit")}
                 >
-                  <Pencil size={12} />
+                  <Pencil size={14} />
                 </button>
               </div>
             )}
-            <span className="text-[11px] opacity-60">
-              {data.face_count} {t("faceCount")}
-              {photos.length > 0 && ` · ${photos.length} ${t("mediaCount")}`}
-            </span>
+
+            <div className="flex flex-wrap gap-2 text-xs text-fg-secondary">
+              <span className="flex items-center gap-1 rounded bg-fill-secondary px-2 py-1">
+                <Users size={12} />
+                {data.face_count} {t("faceCount")}
+              </span>
+              <span className="flex items-center gap-1 rounded bg-fill-secondary px-2 py-1">
+                <Image size={12} />
+                {data.media_count || media.length} {t("mediaCount")}
+              </span>
+            </div>
           </div>
         </div>
       </Card>
 
-      {/* Photos from photo app */}
       <section className="flex flex-col gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide opacity-50">
-          {t("mediaCount")} ({photos.length})
-        </h3>
-        {photosLoading ? (
-          <div className="text-xs opacity-40">{t("loading")}</div>
-        ) : photos.length === 0 ? (
-          <div className="text-xs opacity-40">{t("noResult")}</div>
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Image size={15} className="text-accent-text" />
+          {t("linkedSources")}
+        </div>
+        {media.length === 0 ? (
+          <div className="rounded border border-dashed border-base px-3 py-6 text-center text-xs text-fg-muted">
+            {t("noLinkedSources")}
+          </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
-            {photos.map((photo) => (
-              <div
-                key={photo.id}
-                className="flex flex-col items-center gap-1 rounded border border-black/10 dark:border-white/10 p-2"
-              >
-                <img
-                  src={`/api/thumb/photo/${photo.id}?w=200&h=200`}
-                  alt={photo.filename}
-                  className="h-16 w-16 rounded object-cover"
-                  loading="lazy"
-                />
-                <span
-                  className="max-w-full truncate text-[10px] opacity-50"
-                  title={photo.filename}
-                >
-                  {photo.filename}
-                </span>
-              </div>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-2">
+            {media.map((item) => (
+              <SourceTile key={item.key} item={item} />
             ))}
           </div>
         )}
       </section>
 
-      {/* Face detections */}
       <section className="flex flex-col gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide opacity-50">
-          {t("faceCount")} ({data.faces.length})
-        </h3>
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Users size={15} className="text-accent-text" />
+          {t("faceSamples")}
+        </div>
         {data.faces.length === 0 ? (
-          <div className="text-xs opacity-40">{t("noResult")}</div>
+          <div className="rounded border border-dashed border-base px-3 py-6 text-center text-xs text-fg-muted">
+            {t("noResult")}
+          </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-2">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
             {data.faces.map((face) => (
               <div
                 key={face.id}
-                className="flex flex-col items-center gap-1 rounded border border-black/10 dark:border-white/10 p-2"
+                className="flex min-w-0 flex-col gap-1 rounded-md border border-base bg-surface-raised p-2"
               >
-                <img
-                  src={`/api/thumb/photo/${face.image_hash}?w=200&h=200`}
-                  alt=""
-                  className="h-14 w-14 rounded object-cover"
-                  loading="lazy"
-                />
-                <span className="text-[10px] opacity-50">
-                  {face.source_app}
+                <div className="aspect-square overflow-hidden rounded bg-fill-secondary">
+                  <PreviewImage
+                    source={face}
+                    alt={getSourceLabel(face.source_app)}
+                  />
+                </div>
+                <span className="truncate text-xs text-fg-secondary">
+                  {getSourceLabel(face.source_app)} #{face.face_index + 1}
                 </span>
               </div>
             ))}
@@ -222,5 +251,85 @@ export function PersonDetail({ person, t, onBack }: Props) {
         )}
       </section>
     </div>
+  );
+}
+
+type DisplayMedia = {
+  key: string;
+  source_app: string;
+  source_id: string;
+};
+
+function buildMediaList(
+  media: SourceMediaDto[],
+  faces: FaceDetailDto[],
+): DisplayMedia[] {
+  if (media.length > 0) {
+    return media.map((item) => ({
+      key: item.id,
+      source_app: item.source_app,
+      source_id: item.source_id,
+    }));
+  }
+
+  const seen = new Set<string>();
+  const items: DisplayMedia[] = [];
+  for (const face of faces) {
+    const key = `${face.source_app}:${face.source_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({
+      key,
+      source_app: face.source_app,
+      source_id: face.source_id,
+    });
+  }
+  return items;
+}
+
+function SourceTile({ item }: { item: DisplayMedia }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 rounded-md border border-base bg-surface-raised p-2">
+      <div className="aspect-square overflow-hidden rounded bg-fill-secondary">
+        <PreviewImage source={item} alt={getSourceLabel(item.source_app)} />
+      </div>
+      <div className="flex min-w-0 items-center gap-1 text-xs text-fg-secondary">
+        <Database size={12} />
+        <span className="truncate">{getSourceLabel(item.source_app)}</span>
+      </div>
+    </div>
+  );
+}
+
+function PreviewImage({
+  source,
+  alt,
+}: {
+  source: { source_app: string; source_id: string };
+  alt: string;
+}) {
+  const thumbnailUrl = getSourceThumbnailUrl(
+    {
+      sourceApp: source.source_app,
+      sourceId: source.source_id,
+    },
+    240,
+  );
+
+  if (!thumbnailUrl) {
+    return (
+      <div className="flex h-full w-full items-center justify-center">
+        <Image size={22} className="text-fg-muted" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={thumbnailUrl}
+      alt={alt}
+      className="h-full w-full object-cover"
+      loading="lazy"
+    />
   );
 }

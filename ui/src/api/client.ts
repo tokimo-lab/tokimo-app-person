@@ -1,6 +1,7 @@
 export interface PersonDto {
   id: string;
-  name: string;
+  name: string | null;
+  avatar_url: string | null;
   face_count: number;
   media_count: number;
   created_at: string;
@@ -21,12 +22,21 @@ export interface FaceDetailDto {
   source_id: string;
 }
 
+export interface SourceMediaDto {
+  id: string;
+  source_app: string;
+  source_id: string;
+  created_at: string;
+}
+
 export interface PersonDetailDto {
   id: string;
-  name: string;
+  name: string | null;
+  avatar_url: string | null;
   face_count: number;
   media_count: number;
   faces: FaceDetailDto[];
+  media: SourceMediaDto[];
   created_at: string;
   updated_at: string;
 }
@@ -47,13 +57,19 @@ export interface PhotosResponse {
 }
 
 export interface MatchFaceResp {
-  person_id: string | null;
+  person_id: string;
   is_new: boolean;
   similarity: number;
 }
 
 export interface RegisterFacesResp {
   cached: number;
+}
+
+export interface DeleteSourceResp {
+  deleted_cache: number;
+  deleted_media: number;
+  affected_persons: number;
 }
 
 const BASE = "/api/apps/person";
@@ -79,7 +95,7 @@ export const api = {
   getPerson: (id: string) => request<PersonDetailDto>(`/persons/${id}/detail`),
 
   updatePerson: (id: string, data: { name?: string }) =>
-    request<PersonDetailDto>(`/persons/${id}`, {
+    request<PersonDto>(`/persons/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -105,45 +121,9 @@ export const api = {
     }),
 
   deleteSource: (params: { source_app: string; source_id: string }) =>
-    request<{ deleted: number }>("/delete-source", {
+    request<DeleteSourceResp>("/delete-source", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
     }),
 };
-
-// ── Photo app API (cross-app) ────────────────────────────────────────────────
-
-const PHOTO_BASE = "/api/apps/photo";
-
-export async function fetchPersonPhotos(
-  personId: string,
-): Promise<PhotoOutput[]> {
-  try {
-    // First, get all photo libraries
-    const libsRes = await fetch(PHOTO_BASE);
-    if (!libsRes.ok) return [];
-    const libs = await libsRes.json();
-    const libraries: Array<{ id: string }> = libs.data ?? [];
-
-    // For each library, get photos for this person
-    const allPhotos: PhotoOutput[] = [];
-    for (const lib of libraries) {
-      try {
-        const res = await fetch(
-          `${PHOTO_BASE}/${lib.id}/persons/${personId}/photos?page=1&pageSize=100`,
-        );
-        if (!res.ok) continue;
-        const data = await res.json();
-        if (data.data?.items) {
-          allPhotos.push(...data.data.items);
-        }
-      } catch {
-        // Library might not have this person, skip
-      }
-    }
-    return allPhotos;
-  } catch {
-    return [];
-  }
-}

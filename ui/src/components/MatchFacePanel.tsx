@@ -88,17 +88,13 @@ export function MatchFacePanel({ t, onPersonClick }: Props) {
               <span>{(result.similarity * 100).toFixed(1)}%</span>
               <span className="opacity-50">{t("person")}</span>
               <span>
-                {result.person_id ? (
-                  <button
-                    type="button"
-                    className="cursor-pointer text-[var(--color-accent)] hover:underline bg-transparent border-none p-0 text-[11px]"
-                    onClick={() => onPersonClick?.(result.person_id!)}
-                  >
-                    {result.person_id}
-                  </button>
-                ) : (
-                  "—"
-                )}
+                <button
+                  type="button"
+                  className="cursor-pointer border-none bg-transparent p-0 text-[11px] text-accent-text hover:underline"
+                  onClick={() => onPersonClick?.(result.person_id)}
+                >
+                  {result.person_id}
+                </button>
               </span>
             </div>
           </div>

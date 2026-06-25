@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 use sea_orm::{sea_query::Expr, *};
 use serde_json::json;
@@ -24,6 +26,32 @@ impl PersonRepo {
             .order_by_desc(Column::UpdatedAt)
             .all(db)
             .await?)
+    }
+
+    pub async fn media_counts<C: ConnectionTrait>(
+        db: &C,
+        person_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, i32>, AppError> {
+        let mut counts = HashMap::new();
+        if person_ids.is_empty() {
+            return Ok(counts);
+        }
+
+        let rows = pm::Entity::find()
+            .select_only()
+            .column(pm::Column::PersonId)
+            .column_as(pm::Column::Id.count(), "cnt")
+            .filter(pm::Column::PersonId.eq_any(person_ids.to_vec()))
+            .group_by(pm::Column::PersonId)
+            .into_tuple::<(Uuid, i64)>()
+            .all(db)
+            .await?;
+
+        for (person_id, count) in rows {
+            counts.insert(person_id, Ord::min(count, i32::MAX as i64) as i32);
+        }
+
+        Ok(counts)
     }
 
     pub async fn get_by_id<C: ConnectionTrait>(

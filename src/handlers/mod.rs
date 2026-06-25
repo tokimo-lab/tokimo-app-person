@@ -12,7 +12,6 @@ use uuid::Uuid;
 
 use crate::{
     db::repos::{face_cache_repo::FaceCacheRepo, person_repo::PersonRepo},
-    db::entities::image_face_cache,
     error::AppError,
 };
 
@@ -39,12 +38,18 @@ pub struct PersonDto {
 
 impl From<crate::db::entities::persons::Model> for PersonDto {
     fn from(m: crate::db::entities::persons::Model) -> Self {
+        Self::from_model(m, 0)
+    }
+}
+
+impl PersonDto {
+    fn from_model(m: crate::db::entities::persons::Model, media_count: i32) -> Self {
         Self {
             id: m.id,
             name: m.name,
             avatar_url: m.avatar_url,
             face_count: m.face_count,
-            media_count: 0, // TODO: query actual media count
+            media_count,
             created_at: m.created_at.with_timezone(&Utc),
             updated_at: m.updated_at.with_timezone(&Utc),
         }
@@ -65,7 +70,15 @@ pub async fn list_persons(
     let uid = parse_user_id(&user_id)?;
     let persons = PersonRepo::list(&ctx.db, uid).await?;
     let total = persons.len() as u64;
-    let items = persons.into_iter().map(PersonDto::from).collect();
+    let person_ids: Vec<Uuid> = persons.iter().map(|person| person.id).collect();
+    let media_counts = PersonRepo::media_counts(&ctx.db, &person_ids).await?;
+    let items = persons
+        .into_iter()
+        .map(|person| {
+            let media_count = media_counts.get(&person.id).copied().unwrap_or(0);
+            PersonDto::from_model(person, media_count)
+        })
+        .collect();
     Ok(Json(PersonListResponse { items, total }))
 }
 
@@ -97,6 +110,17 @@ pub struct FaceDetailDto {
 
 #[derive(Serialize, TS)]
 #[ts(export)]
+pub struct SourceMediaDto {
+    #[ts(type = "string")]
+    pub id: String,
+    pub source_app: String,
+    pub source_id: String,
+    #[ts(type = "string")]
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct PersonDetailDto {
     #[ts(type = "string")]
     pub id: Uuid,
@@ -105,6 +129,7 @@ pub struct PersonDetailDto {
     pub face_count: i32,
     pub media_count: i32,
     pub faces: Vec<FaceDetailDto>,
+    pub media: Vec<SourceMediaDto>,
     #[ts(type = "string")]
     pub created_at: DateTime<Utc>,
     #[ts(type = "string")]
@@ -122,6 +147,7 @@ pub async fn get_person_detail(
         .ok_or_else(|| AppError::NotFound("person not found".into()))?;
 
     let face_links = PersonRepo::get_person_faces(&ctx.db, id).await?;
+    let media_rows = PersonRepo::get_person_media(&ctx.db, id).await?;
     let faces: Vec<FaceDetailDto> = face_links
         .into_iter()
         .map(|(pf, cache)| FaceDetailDto {
@@ -133,14 +159,24 @@ pub async fn get_person_detail(
             source_id: cache.source_id.clone(),
         })
         .collect();
+    let media: Vec<SourceMediaDto> = media_rows
+        .into_iter()
+        .map(|row| SourceMediaDto {
+            id: row.id.to_string(),
+            source_app: row.source_app,
+            source_id: row.source_id,
+            created_at: row.created_at.with_timezone(&Utc),
+        })
+        .collect();
 
     Ok(Json(PersonDetailDto {
         id: person.id,
         name: person.name,
         avatar_url: person.avatar_url,
         face_count: person.face_count,
-        media_count: 0,
+        media_count: media.len().min(i32::MAX as usize) as i32,
         faces,
+        media,
         created_at: person.created_at.with_timezone(&Utc),
         updated_at: person.updated_at.with_timezone(&Utc),
     }))
