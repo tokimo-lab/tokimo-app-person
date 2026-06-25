@@ -112,7 +112,7 @@ export const api = {
     image_hash: string;
     source_app: string;
     source_id: string;
-    faces: Array<{ index: number; bbox: [number, number, number, number] }>;
+    faces: Array<{ index?: number; bbox?: unknown; embedding?: number[]; [key: string]: unknown }>;
   }) =>
     request<RegisterFacesResp>("/register-faces", {
       method: "POST",

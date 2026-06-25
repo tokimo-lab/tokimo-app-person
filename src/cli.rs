@@ -7,9 +7,7 @@ pub async fn run_list(user_id: String) -> anyhow::Result<()> {
     let db = init_pool().await.context("connect database failed")?;
     let uid = Uuid::parse_str(&user_id).context("invalid user_id")?;
 
-    let persons = PersonRepo::list(&db, uid)
-        .await
-        .context("list persons failed")?;
+    let persons = PersonRepo::list(&db, uid).await.context("list persons failed")?;
 
     if persons.is_empty() {
         println!("No persons.");
@@ -28,11 +26,7 @@ pub async fn run_list(user_id: String) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn run_match_face(
-    user_id: String,
-    image_hash: String,
-    face_index: i32,
-) -> anyhow::Result<()> {
+pub async fn run_match_face(user_id: String, image_hash: String, face_index: i32) -> anyhow::Result<()> {
     let db = init_pool().await.context("connect database failed")?;
     let uid = Uuid::parse_str(&user_id).context("invalid user_id")?;
 
@@ -45,19 +39,13 @@ pub async fn run_match_face(
         .find(|f| f.face_index == face_index)
         .ok_or_else(|| anyhow::anyhow!("face index {face_index} not found for image {image_hash}"))?;
 
-    let link = PersonRepo::get_face_link(&db, uid, face.id)
+    let matched = PersonRepo::match_face(&db, uid, face.id, 0.68)
         .await
-        .context("get face link failed")?;
+        .context("match face failed")?;
 
-    match link {
-        Some(l) => {
-            println!("Matched person: {}", l.person_id);
-            println!("Face cache ID: {}", face.id);
-        }
-        None => {
-            println!("No person match for face {}", face.id);
-            println!("Face cache ID: {}", face.id);
-        }
-    }
+    println!("Matched person: {}", matched.person_id);
+    println!("Face cache ID: {}", matched.face_cache_id);
+    println!("Similarity: {:.4}", matched.similarity);
+    println!("New person: {}", matched.is_new);
     Ok(())
 }

@@ -3,13 +3,59 @@ use sea_orm::*;
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
-use crate::db::entities::image_face_cache::{self, ActiveModel, Column, Entity};
+use crate::db::entities::image_face_cache::{self, Column, Entity};
 use crate::error::AppError;
 
 pub struct FaceCacheRepo;
 
 #[allow(dead_code)]
 impl FaceCacheRepo {
+    fn vec_literal(embedding: &[f64]) -> String {
+        let inner: Vec<String> = embedding.iter().map(std::string::ToString::to_string).collect();
+        format!("[{}]", inner.join(","))
+    }
+
+    fn face_index(face: &JsonValue, fallback: usize) -> i32 {
+        face.get("index")
+            .and_then(|v| v.as_i64())
+            .or_else(|| face.get("faceIndex").and_then(|v| v.as_i64()))
+            .unwrap_or(fallback as i64) as i32
+    }
+
+    fn face_embedding(face: &JsonValue) -> Result<Vec<f64>, AppError> {
+        let values = face
+            .get("embedding")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| AppError::BadRequest("face embedding is required".into()))?;
+        if values.len() != 512 {
+            return Err(AppError::BadRequest(format!(
+                "face embedding must have 512 dimensions, got {}",
+                values.len()
+            )));
+        }
+        values
+            .iter()
+            .map(|v| {
+                v.as_f64()
+                    .ok_or_else(|| AppError::BadRequest("face embedding must contain numbers".into()))
+            })
+            .collect()
+    }
+
+    fn face_bbox(face: &JsonValue) -> JsonValue {
+        if let Some(bbox) = face.get("bbox") {
+            return bbox.clone();
+        }
+
+        serde_json::json!({
+            "x": face.get("x").cloned().unwrap_or(JsonValue::Null),
+            "y": face.get("y").cloned().unwrap_or(JsonValue::Null),
+            "w": face.get("w").cloned().unwrap_or(JsonValue::Null),
+            "h": face.get("h").cloned().unwrap_or(JsonValue::Null),
+            "confidence": face.get("confidence").cloned().unwrap_or(JsonValue::Null),
+        })
+    }
+
     pub async fn get_by_image_hash<C: ConnectionTrait>(
         db: &C,
         image_hash: &str,
@@ -21,10 +67,7 @@ impl FaceCacheRepo {
             .await?)
     }
 
-    pub async fn get_by_id<C: ConnectionTrait>(
-        db: &C,
-        id: Uuid,
-    ) -> Result<Option<image_face_cache::Model>, AppError> {
+    pub async fn get_by_id<C: ConnectionTrait>(db: &C, id: Uuid) -> Result<Option<image_face_cache::Model>, AppError> {
         Ok(Entity::find_by_id(id).one(db).await?)
     }
 
@@ -35,34 +78,43 @@ impl FaceCacheRepo {
         source_id: &str,
         faces: &[JsonValue],
     ) -> Result<Vec<image_face_cache::Model>, AppError> {
-        let existing = Self::get_by_image_hash(db, image_hash).await?;
-        if !existing.is_empty() {
-            return Ok(existing);
+        if faces.is_empty() {
+            return Ok(Vec::new());
         }
 
         let now = Utc::now().fixed_offset();
-        let models: Vec<ActiveModel> = faces
-            .iter()
-            .enumerate()
-            .map(|(i, face)| ActiveModel {
-                id: Set(Uuid::new_v4()),
-                image_hash: Set(image_hash.to_string()),
-                source_app: Set(source_app.to_string()),
-                source_id: Set(source_id.to_string()),
-                face_index: Set(i as i32),
-                bbox: Set(face.clone()),
-                created_at: Set(now),
-            })
-            .collect();
-
-        Entity::insert_many(models)
-            .on_conflict(
-                sea_query::OnConflict::columns([Column::ImageHash, Column::FaceIndex])
-                    .do_nothing()
-                    .to_owned(),
-            )
-            .exec(db)
-            .await?;
+        for (i, face) in faces.iter().enumerate() {
+            let face_index = Self::face_index(face, i);
+            let embedding = Self::face_embedding(face)?;
+            let embedding_literal = Self::vec_literal(&embedding);
+            let bbox = Self::face_bbox(face);
+            let stmt = Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r"
+                INSERT INTO image_face_cache
+                    (id, image_hash, source_app, source_id, face_index, embedding, bbox, created_at)
+                VALUES
+                    ($1, $2, $3, $4, $5, $6::vector, $7::jsonb, $8)
+                ON CONFLICT (image_hash, face_index)
+                DO UPDATE SET
+                    source_app = EXCLUDED.source_app,
+                    source_id = EXCLUDED.source_id,
+                    embedding = EXCLUDED.embedding,
+                    bbox = EXCLUDED.bbox
+                ",
+                vec![
+                    Uuid::new_v4().into(),
+                    image_hash.into(),
+                    source_app.into(),
+                    source_id.into(),
+                    face_index.into(),
+                    embedding_literal.into(),
+                    bbox.into(),
+                    now.into(),
+                ],
+            );
+            db.execute_raw(stmt).await?;
+        }
 
         Self::get_by_image_hash(db, image_hash).await
     }

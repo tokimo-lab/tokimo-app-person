@@ -90,36 +90,24 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                     .find(|f| f.face_index == body.face_index)
                     .ok_or_else(|| BusError::BadRequest("face not found in cache".into()))?;
 
-                let link = PersonRepo::get_face_link(&ctx.db, user_id, face.id)
+                let matched = PersonRepo::match_face(&ctx.db, user_id, face.id, 0.68)
                     .await
                     .map_err(|e| BusError::Internal(e.to_string()))?;
-
-                let person_id = if let Some(l) = link {
-                    Some(l.person_id)
-                } else {
-                    // Auto-create a new person and link the face
-                    let person = PersonRepo::create(&ctx.db, user_id, None)
-                        .await
-                        .map_err(|e| BusError::Internal(e.to_string()))?;
-                    PersonRepo::link_face(&ctx.db, user_id, person.id, face.id)
-                        .await
-                        .map_err(|e| BusError::Internal(e.to_string()))?;
-                    PersonRepo::increment_face_count(&ctx.db, person.id)
-                        .await
-                        .map_err(|e| BusError::Internal(e.to_string()))?;
-                    Some(person.id)
-                };
 
                 #[derive(serde::Serialize)]
                 struct Resp {
                     face_cache_id: Uuid,
                     person_id: Option<Uuid>,
                     bbox: serde_json::Value,
+                    is_new: bool,
+                    similarity: f64,
                 }
                 let resp = Resp {
-                    face_cache_id: face.id,
-                    person_id,
-                    bbox: face.bbox,
+                    face_cache_id: matched.face_cache_id,
+                    person_id: Some(matched.person_id),
+                    bbox: matched.bbox,
+                    is_new: matched.is_new,
+                    similarity: matched.similarity,
                 };
                 serde_json::to_vec(&resp).map_err(|e| BusError::Internal(e.to_string()))
             }
@@ -138,25 +126,14 @@ pub fn register(builder: BusClientBuilder, ctx: Arc<AppState>) -> BusClientBuild
                 }
                 let body: Req = decode_json(&req.payload)?;
 
-                let deleted_faces = FaceCacheRepo::delete_by_source(
-                    &ctx.db,
-                    &body.source_app,
-                    &body.source_id,
-                )
-                .await
-                .map_err(|e| BusError::Internal(e.to_string()))?;
-
-                let deleted_media = PersonRepo::delete_media_by_source(
-                    &ctx.db,
-                    &body.source_app,
-                    &body.source_id,
-                )
-                .await
-                .map_err(|e| BusError::Internal(e.to_string()))?;
+                let deleted = PersonRepo::delete_source(&ctx.db, &body.source_app, &body.source_id)
+                    .await
+                    .map_err(|e| BusError::Internal(e.to_string()))?;
 
                 serde_json::to_vec(&serde_json::json!({
-                    "deleted_faces": deleted_faces,
-                    "deleted_media": deleted_media,
+                    "deleted_faces": deleted.deleted_cache,
+                    "deleted_media": deleted.deleted_media,
+                    "affected_persons": deleted.affected_persons,
                 }))
                 .map_err(|e| BusError::Internal(e.to_string()))
             }

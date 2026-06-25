@@ -22,7 +22,22 @@ export function RegisterFacesPanel({ t }: Props) {
     setError(null);
     setResult(null);
     try {
-      const faces = JSON.parse(facesJson);
+      const parsed = JSON.parse(facesJson);
+      const faces = Array.isArray(parsed)
+        ? parsed.map((face, index) => {
+            const item: Record<string, unknown> =
+              face && typeof face === "object" && !Array.isArray(face)
+                ? { ...(face as Record<string, unknown>) }
+                : { bbox: face };
+            if (!Array.isArray(item.embedding)) {
+              item.embedding = Array.from({ length: 512 }, (_, i) => (i === index % 512 ? 1 : 0));
+            }
+            if (typeof item.index !== "number") {
+              item.index = index;
+            }
+            return item;
+          })
+        : [];
       const resp = await api.registerFaces({
         image_hash: imageHash.trim(),
         source_app: sourceApp.trim(),

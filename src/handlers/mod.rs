@@ -210,13 +210,7 @@ pub struct RegisterFacesReq {
     pub image_hash: String,
     pub source_app: String,
     pub source_id: String,
-    pub faces: Vec<RegisterFaceItem>,
-}
-
-#[derive(Deserialize)]
-pub struct RegisterFaceItem {
-    pub index: i32,
-    pub bbox: serde_json::Value,
+    pub faces: Vec<serde_json::Value>,
 }
 
 #[derive(Serialize, TS)]
@@ -229,19 +223,10 @@ pub async fn register_faces(
     State(ctx): State<Arc<AppCtx>>,
     Json(req): Json<RegisterFacesReq>,
 ) -> Result<Json<RegisterFacesResponse>, AppError> {
-    let faces: Vec<serde_json::Value> = req
-        .faces
-        .into_iter()
-        .map(|f| serde_json::json!({"index": f.index, "bbox": f.bbox}))
-        .collect();
-
     let result =
-        FaceCacheRepo::upsert_faces(&ctx.db, &req.image_hash, &req.source_app, &req.source_id, &faces)
-            .await?;
+        FaceCacheRepo::upsert_faces(&ctx.db, &req.image_hash, &req.source_app, &req.source_id, &req.faces).await?;
 
-    Ok(Json(RegisterFacesResponse {
-        cached: result.len(),
-    }))
+    Ok(Json(RegisterFacesResponse { cached: result.len() }))
 }
 
 #[derive(Deserialize)]
@@ -274,24 +259,12 @@ pub async fn match_face(
         .find(|f| f.face_index == req.face_index)
         .ok_or_else(|| AppError::NotFound("face not found in cache".into()))?;
 
-    // Check if already linked
-    if let Some(link) = PersonRepo::get_face_link(&ctx.db, uid, face.id).await? {
-        return Ok(Json(MatchFaceResponse {
-            person_id: link.person_id,
-            is_new: false,
-            similarity: 1.0,
-        }));
-    }
-
-    // Create new person and link
-    let person = PersonRepo::create(&ctx.db, uid, None).await?;
-    PersonRepo::link_face(&ctx.db, uid, person.id, face.id).await?;
-    PersonRepo::link_media(&ctx.db, uid, person.id, &face.source_app, &face.source_id).await?;
+    let matched = PersonRepo::match_face(&ctx.db, uid, face.id, 0.68).await?;
 
     Ok(Json(MatchFaceResponse {
-        person_id: person.id,
-        is_new: true,
-        similarity: 0.0,
+        person_id: matched.person_id,
+        is_new: matched.is_new,
+        similarity: matched.similarity,
     }))
 }
 
@@ -314,22 +287,11 @@ pub async fn delete_source(
     State(ctx): State<Arc<AppCtx>>,
     Json(req): Json<DeleteSourceReq>,
 ) -> Result<Json<DeleteSourceResponse>, AppError> {
-    // Delete media associations
-    let deleted_media_count =
-        PersonRepo::delete_media_by_source(&ctx.db, &req.source_app, &req.source_id).await?;
-
-    // Delete face cache (CASCADE will clean person_faces)
-    let deleted_cache =
-        FaceCacheRepo::delete_by_source(&ctx.db, &req.source_app, &req.source_id).await?;
-
-    // Clean up empty persons (we don't know which users were affected,
-    // so we clean up all empty persons for now)
-    // TODO: Track affected users more precisely
-    let affected_persons = 0u64;
+    let deleted = PersonRepo::delete_source(&ctx.db, &req.source_app, &req.source_id).await?;
 
     Ok(Json(DeleteSourceResponse {
-        deleted_cache,
-        deleted_media: deleted_media_count,
-        affected_persons,
+        deleted_cache: deleted.deleted_cache,
+        deleted_media: deleted.deleted_media,
+        affected_persons: deleted.affected_persons,
     }))
 }
