@@ -6,11 +6,7 @@ use crate::db::repos::face_cache_repo::FaceCacheRepo;
 use crate::error::AppError;
 use crate::state::AppState;
 
-pub async fn handle(
-    ctx: &Arc<AppState>,
-    _job_id: Uuid,
-    params: &JsonValue,
-) -> Result<Option<JsonValue>, AppError> {
+pub async fn handle(ctx: &Arc<AppState>, _job_id: Uuid, params: &JsonValue) -> Result<Option<JsonValue>, AppError> {
     let image_hash = params
         .get("imageHash")
         .and_then(|v| v.as_str())
@@ -29,8 +25,7 @@ pub async fn handle(
         .and_then(|v| v.as_array())
         .ok_or_else(|| AppError::BadRequest("missing faces array".into()))?;
 
-    let result =
-        FaceCacheRepo::upsert_faces(&ctx.db, image_hash, source_app, source_id, faces_json).await?;
+    let result = FaceCacheRepo::upsert_faces(&ctx.db, image_hash, source_app, source_id, faces_json).await?;
 
     Ok(Some(serde_json::json!({
         "cached": result.len(),

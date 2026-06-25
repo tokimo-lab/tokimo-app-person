@@ -135,10 +135,7 @@ async fn run_server() -> anyhow::Result<()> {
 
     let builder = bus_services::person::register(builder, Arc::clone(&ctx));
 
-    let client = builder
-        .build()
-        .await
-        .map_err(|e| anyhow::anyhow!("bus build: {e}"))?;
+    let client = builder.build().await.map_err(|e| anyhow::anyhow!("bus build: {e}"))?;
 
     client_slot
         .set(Arc::clone(&client))
@@ -147,10 +144,8 @@ async fn run_server() -> anyhow::Result<()> {
     info!("person: registered with broker");
 
     // Register job handlers for async processing with retry
-    bus_clients::jobs::register_handler(&client, "person_delete_source", "dispatch_person_delete_source")
-        .await?;
-    bus_clients::jobs::register_handler(&client, "person_register_faces", "dispatch_person_register_faces")
-        .await?;
+    bus_clients::jobs::register_handler(&client, "person_delete_source", "dispatch_person_delete_source").await?;
+    bus_clients::jobs::register_handler(&client, "person_register_faces", "dispatch_person_register_faces").await?;
     info!("person: job handlers registered");
 
     let shutdown = {

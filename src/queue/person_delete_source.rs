@@ -6,11 +6,7 @@ use crate::db::repos::person_repo::PersonRepo;
 use crate::error::AppError;
 use crate::state::AppState;
 
-pub async fn handle(
-    ctx: &Arc<AppState>,
-    _job_id: Uuid,
-    params: &JsonValue,
-) -> Result<Option<JsonValue>, AppError> {
+pub async fn handle(ctx: &Arc<AppState>, _job_id: Uuid, params: &JsonValue) -> Result<Option<JsonValue>, AppError> {
     let source_app = params
         .get("sourceApp")
         .and_then(|v| v.as_str())
