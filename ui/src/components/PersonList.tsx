@@ -1,14 +1,25 @@
-import { Card, Empty, Input } from "@tokimo/ui";
-import { Image, Search, Users } from "lucide-react";
+import {
+  AppSetupGuide,
+  Card,
+  Empty,
+  Input,
+  type AppSetupGuideProps,
+} from "@tokimo/ui";
+import { Database, FlaskConical, Image, Search, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, type PersonDto } from "../api/client";
+
+type GuideIcon = AppSetupGuideProps["features"][number]["icon"];
+
+const guideIcon = (icon: typeof Users) => icon as unknown as GuideIcon;
 
 interface Props {
   t: (key: string) => string;
   onSelect: (person: PersonDto) => void;
+  onDebugOpen: () => void;
 }
 
-export function PersonList({ t, onSelect }: Props) {
+export function PersonList({ t, onSelect, onDebugOpen }: Props) {
   const [persons, setPersons] = useState<PersonDto[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -55,6 +66,26 @@ export function PersonList({ t, onSelect }: Props) {
         {t("error")}
         {error}
       </div>
+    );
+  }
+
+  if (total === 0 && query.trim() === "") {
+    return (
+      <AppSetupGuide
+        imageSrc="/api/apps/person/assets/icon.png"
+        accentColor="purple"
+        title={t("setupTitle")}
+        description={t("setupDescription")}
+        features={[
+          { icon: guideIcon(Users), label: t("setupFeatureIdentity") },
+          { icon: guideIcon(Image), label: t("setupFeatureSources") },
+          { icon: guideIcon(Database), label: t("setupFeatureOwnership") },
+        ]}
+        actionLabel={t("setupAction")}
+        actionIcon={guideIcon(FlaskConical)}
+        onAction={onDebugOpen}
+        className="-m-4 h-[calc(100%+2rem)]"
+      />
     );
   }
 

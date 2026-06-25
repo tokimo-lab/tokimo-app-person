@@ -83,7 +83,13 @@ function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
       </header>
 
       <main className="flex-1 overflow-auto p-4">
-        {view === "list" && <PersonList t={t} onSelect={handleSelect} />}
+        {view === "list" && (
+          <PersonList
+            t={t}
+            onSelect={handleSelect}
+            onDebugOpen={() => setDebugOpen(true)}
+          />
+        )}
         {view === "detail" && selected && (
           <PersonDetail person={selected} t={t} onBack={handleBack} />
         )}
