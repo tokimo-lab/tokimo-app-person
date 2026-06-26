@@ -1,5 +1,6 @@
 -- Enable pgvector extension for face embedding storage
-CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+ALTER EXTENSION vector SET SCHEMA public;
 
 -- Shared layer: face detection results cache (no user_id, objective data)
 CREATE TABLE image_face_cache (
