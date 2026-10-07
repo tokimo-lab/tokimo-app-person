@@ -151,6 +151,11 @@ export default defineApp({
     category: "app",
   },
   translations: { "zh-CN": zhCN, "en-US": enUS },
+  standalone: {
+    createWindow: (route) => ({ type: "person", route }),
+    getRoute: (window) =>
+      window.type === "person" ? (window.route ?? "/") : null,
+  },
   mount(container, ctx): Dispose {
     const root = createRoot(container);
     const locale = ctx.locale.startsWith("zh") ? uiZhCN : uiEnUS;
