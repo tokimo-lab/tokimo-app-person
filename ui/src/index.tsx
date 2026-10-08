@@ -6,9 +6,12 @@ import {
   makeTranslator,
   RuntimeProvider,
   useMenuBar,
+  useStandaloneDocumentScroll,
 } from "@tokimo/sdk";
 import {
   ConfigProvider,
+  cssVar,
+  TOKEN,
   ToastProvider,
   enUS as uiEnUS,
   zhCN as uiZhCN,
@@ -26,6 +29,7 @@ import { PersonList } from "./components/PersonList";
 type View = "list" | "detail";
 
 function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
+  const documentScroll = useStandaloneDocumentScroll();
   const t = useMemo(
     () => makeTranslator({ "zh-CN": zhCN, "en-US": enUS }, ctx.locale),
     [ctx.locale],
@@ -101,7 +105,9 @@ function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
   };
 
   return (
-    <div className="app-safe-area relative flex h-full w-full flex-col bg-surface-base text-fg-primary">
+    <div
+      className={`app-safe-area relative flex w-full flex-col bg-surface-base text-fg-primary ${documentScroll ? "min-h-dvh" : "h-full"}`}
+    >
       <header className="flex items-center gap-3 border-b border-base px-4 py-3">
         <Users size={20} className="text-accent-text" />
         <div className="flex flex-col">
@@ -110,7 +116,9 @@ function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto p-4">
+      <main
+        className={`flex-1 p-4 ${documentScroll ? "overflow-visible" : "overflow-auto"}`}
+      >
         {view === "list" && (
           <PersonList
             t={t}
@@ -152,6 +160,8 @@ export default defineApp({
   },
   translations: { "zh-CN": zhCN, "en-US": enUS },
   standalone: {
+    layout: "document",
+    background: cssVar(TOKEN.surfaceBase),
     createWindow: (route) => ({ type: "person", route }),
     getRoute: (window) =>
       window.type === "person" ? (window.route ?? "/") : null,
