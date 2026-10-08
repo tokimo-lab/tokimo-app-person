@@ -2,8 +2,8 @@ import {
   type AppRuntimeCtx,
   type Dispose,
   defineApp,
-  makeTranslator,
   type MenuBarConfig,
+  makeTranslator,
   RuntimeProvider,
   useMenuBar,
 } from "@tokimo/sdk";
@@ -101,7 +101,7 @@ function PersonWindow({ ctx }: { ctx: AppRuntimeCtx }) {
   };
 
   return (
-    <div className="relative flex h-full w-full flex-col bg-surface-base text-fg-primary">
+    <div className="app-safe-area relative flex h-full w-full flex-col bg-surface-base text-fg-primary">
       <header className="flex items-center gap-3 border-b border-base px-4 py-3">
         <Users size={20} className="text-accent-text" />
         <div className="flex flex-col">
